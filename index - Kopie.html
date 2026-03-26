@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Koordinaten Filter Box</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1f2e; color: #e8eaf0;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    background: #12161f; border-bottom: 1px solid #2a3148;
+    padding: 12px 24px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; flex-shrink: 0;
+  }
+  header .logo {
+    width: 38px; height: 38px; background: #e8542a; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; padding: 3px;
+  }
+  header .logo svg .c-pin         { fill: white; }
+  header .logo svg .c-hole        { fill: #e8542a; }
+  header .logo svg .c-stroke      { stroke: white; stroke-width: 2.5; stroke-linecap: round; }
+  header .logo svg .c-stroke-thick{ stroke: white; stroke-width: 3; stroke-linecap: round; }
+  header h1 { font-size: 15px; font-weight: 600; color: #e8eaf0; }
+  header span { font-size: 12px; color: #6b7494; margin-left: 4px; }
+  .header-right {
+    display: flex; align-items: center; gap: 16px; margin-left: auto;
+  }
+  .header-right a {
+    font-size: 11px; color: #6b7494; text-decoration: none; transition: color 0.15s;
+  }
+  .header-right a:hover { color: #e8eaf0; }
+  .warning-text {
+    font-size: 11px; color: #e8542a; font-weight: 600; letter-spacing: 0.03em;
+  }
+
+  .layout {
+    display: flex; flex: 1; min-height: 0; height: calc(100vh - 55px);
+  }
+  .map-column {
+    flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative;
+  }
+  .radius-bar {
+    background: #12161f; border-bottom: 1px solid #2a3148;
+    padding: 9px 16px; display: flex; align-items: center;
+    gap: 14px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  .radius-bar .r-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #6b7494; white-space: nowrap;
+  }
+  .radius-presets { display: flex; gap: 5px; flex-wrap: wrap; }
+  .preset-btn {
+    padding: 4px 10px; font-size: 12px; border: 1px solid #2a3148;
+    border-radius: 20px; background: #1a1f2e; color: #9ba3c0;
+    cursor: pointer; transition: all 0.15s; font-family: inherit; white-space: nowrap;
+  }
+  .preset-btn:hover { border-color: #e8542a; color: #e8eaf0; }
+  .preset-btn.active { background: #e8542a; border-color: #e8542a; color: white; font-weight: 600; }
+  .slider-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 120px; }
+  .slider-wrap .sl-end { font-size: 10px; color: #4a5270; white-space: nowrap; }
+  input[type="range"] {
+    flex: 1; -webkit-appearance: none; height: 4px;
+    background: #2a3148; border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: #e8542a; cursor: pointer; border: 2px solid #12161f;
+    box-shadow: 0 0 0 1px #e8542a;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #e8542a; cursor: pointer; border: 2px solid #12161f;
+  }
+  .radius-value-display {
+    font-size: 15px; font-weight: 700; color: #e8542a;
+    min-width: 68px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .autozoom-btn {
+    display: flex; align-items: center; gap: 6px; padding: 4px 11px;
+    font-size: 11px; font-weight: 600; border: 1px solid #2a3148; border-radius: 20px;
+    background: #1a1f2e; color: #9ba3c0; cursor: pointer;
+    transition: all 0.15s; font-family: inherit; white-space: nowrap; flex-shrink: 0;
+  }
+  .autozoom-btn .az-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #3a4060; transition: background 0.2s; flex-shrink: 0;
+  }
+  .autozoom-btn.on { border-color: #5db83a; color: #97c459; }
+  .autozoom-btn.on .az-dot { background: #5db83a; }
+  .autozoom-btn:hover { border-color: #e8542a; color: #e8eaf0; }
+  #map { flex: 1; background: #0d1117; cursor: crosshair; }
+  .map-hint-overlay {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(18,22,31,0.88); border: 1px solid #2a3148;
+    border-radius: 8px; padding: 10px 20px; font-size: 13px; color: #9ba3c0;
+    pointer-events: none; z-index: 1000; white-space: nowrap; transition: opacity 0.4s;
+  }
+  .map-hint-overlay.hidden { opacity: 0; }
+  .coord-status {
+    background: #12161f; border-top: 1px solid #2a3148;
+    padding: 6px 16px; font-size: 12px; color: #6b7494;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  }
+  .coord-status .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #3a4060; flex-shrink: 0; transition: background 0.3s;
+  }
+  .coord-status .dot.active { background: #5db83a; }
+  .coord-status .coords-text { font-variant-numeric: tabular-nums; color: #9ba3c0; }
+  .manual-input-bar {
+    background: #12161f; border-top: 1px solid #2a3148;
+    padding: 9px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .manual-input-bar .m-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #4a5270; white-space: nowrap;
+  }
+  .manual-input-bar input[type="text"] {
+    flex: 1; background: #1a1f2e; border: 1px solid #2a3148;
+    border-radius: 6px; padding: 8px 12px; font-size: 13px;
+    color: #e8eaf0; outline: none; transition: border-color 0.15s; font-family: inherit;
+  }
+  .manual-input-bar input[type="text"]:focus { border-color: #e8542a; }
+  .manual-input-bar input::placeholder { color: #3a4060; }
+  .btn-parse {
+    background: #e8542a; color: white; border: none; border-radius: 6px;
+    padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s; font-family: inherit; white-space: nowrap; flex-shrink: 0;
+  }
+  .btn-parse:hover { background: #d4481e; }
+  .sidebar {
+    width: 390px; flex-shrink: 0; background: #12161f;
+    border-left: 1px solid #2a3148; display: flex;
+    flex-direction: column; overflow-y: auto;
+  }
+  .section { padding: 16px 18px; border-bottom: 1px solid #1e2436; }
+  .section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #6b7494; margin-bottom: 12px;
+  }
+  .status-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #3a4060; margin-right: 6px; vertical-align: middle; transition: background 0.3s;
+  }
+  .status-dot.active { background: #5db83a; }
+  .diba-panel { background: #f5f6f9; border: 2px solid #c8cdd8; border-radius: 6px; overflow: hidden; }
+  .diba-panel-header {
+    background: #e8eaf0; border-bottom: 2px solid #c8cdd8;
+    padding: 8px 12px; display: flex; align-items: center; gap: 9px;
+  }
+  .funnel-icon-wrap {
+    flex-shrink: 0; width: 26px; height: 26px; background: #0e4d8f;
+    border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  }
+  .diba-badge {
+    background: #1a6fbb; color: white; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 3px; letter-spacing: 0.06em;
+    text-transform: uppercase; flex-shrink: 0;
+  }
+  .diba-title-text { font-size: 12px; font-weight: 700; color: #1a2a40; }
+  .filter-rows { display: flex; flex-direction: column; }
+  .filter-group-sep {
+    background: #dde0e8; padding: 4px 12px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em; color: #7a8599;
+    border-top: 1px solid #c8cdd8;
+  }
+  .filter-group-sep:first-child { border-top: none; }
+  .filter-row {
+    display: flex; align-items: stretch; background: #fff;
+    border-top: 1px solid #dde0e8; height: 38px;
+  }
+  .filter-row .field-name {
+    width: 92px; flex-shrink: 0; padding: 0 10px; font-size: 10px; font-weight: 700;
+    color: #333; text-transform: uppercase; letter-spacing: 0.04em;
+    border-right: 1px solid #dde0e8; background: #f0f2f6;
+    display: flex; align-items: center; white-space: nowrap;
+  }
+  .filter-row .operator {
+    width: 106px; flex-shrink: 0; padding: 0 8px; font-size: 11px; color: #555;
+    border-right: 1px solid #dde0e8; background: #f8f9fb;
+    display: flex; align-items: center; white-space: nowrap;
+  }
+  .filter-row .coord-value {
+    flex: 1; min-width: 0; padding: 0 10px; font-size: 13px; font-weight: 700; color: #111;
+    font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+    font-variant-numeric: tabular-nums; background: #fff;
+    display: flex; align-items: center; white-space: nowrap; overflow: hidden;
+  }
+  .filter-row .coord-value.empty { color: #bbb; font-weight: 400; font-size: 11px; font-family: inherit; }
+  .filter-row .btn-copy {
+    flex-shrink: 0; background: #eef2f8; border: none; border-left: 1px solid #dde0e8;
+    padding: 0 12px; font-size: 11px; color: #1a6fbb; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap; font-family: inherit; font-weight: 700;
+  }
+  .filter-row .btn-copy:hover { background: #dce6f5; color: #0d4e8a; }
+  .filter-row .btn-copy.copied { background: #eaf5e8; color: #2f7a18; }
+  @media (max-width: 780px) {
+    .layout { flex-direction: column; height: auto; }
+    .sidebar { width: 100%; border-left: none; border-top: 1px solid #2a3148; }
+    #map { height: 340px; }
+  }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 9000;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: #1a1f2e; border: 1px solid #2a3148; border-radius: 10px;
+    max-width: 680px; width: 100%; max-height: 85vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-header {
+    background: #12161f; border-bottom: 1px solid #2a3148;
+    padding: 16px 20px; display: flex; align-items: center;
+    justify-content: space-between; flex-shrink: 0;
+  }
+  .modal-header h2 { font-size: 15px; font-weight: 700; color: #e8eaf0; }
+  .modal-close {
+    background: none; border: none; color: #6b7494;
+    font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; transition: color 0.15s;
+  }
+  .modal-close:hover { color: #e8eaf0; }
+  .modal-body {
+    overflow-y: auto; padding: 24px; color: #c8cfe0; font-size: 13.5px; line-height: 1.7;
+  }
+  .modal-body h3 {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #e8542a;
+    margin: 22px 0 8px; border-bottom: 1px solid #2a3148; padding-bottom: 5px;
+  }
+  .modal-body h3:first-child { margin-top: 0; }
+  .modal-body p { margin-bottom: 10px; }
+  .modal-body ul { margin: 0 0 10px 20px; }
+  .modal-body li { margin-bottom: 4px; }
+  .modal-body a { color: #7fc0f5; text-decoration: none; }
+  .modal-body a:hover { text-decoration: underline; }
+  .modal-body .highlight {
+    background: #12161f; border: 1px solid #2a3148;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" id="logo-btn" title="Koordinaten Filter Box">
+    <svg viewBox="0 0 40 40" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle class="c-pin" cx="20" cy="8" r="6"/>
+      <circle class="c-hole" cx="20" cy="8" r="2.8"/>
+      <path class="c-pin" d="M17.8 13.5 L22.2 13.5 L20 21 Z"/>
+      <line class="c-stroke" x1="3" y1="26" x2="37" y2="26"/>
+      <line class="c-stroke" x1="3" y1="36" x2="37" y2="36"/>
+      <line class="c-stroke-thick" x1="8"  y1="23" x2="8"  y2="39"/>
+      <line class="c-stroke-thick" x1="16" y1="23" x2="16" y2="39"/>
+      <line class="c-stroke-thick" x1="24" y1="23" x2="24" y2="39"/>
+      <line class="c-stroke-thick" x1="32" y1="23" x2="32" y2="39"/>
+    </svg>
+  </div>
+  <h1>Koordinaten Filter Box <span>— Bounding Box Rechner</span></h1>
+  <div class="header-right">
+    <span class="warning-text">⚠ Internes Werkzeug · Experimentell · Nur für autorisierten Zugang</span>
+    <a href="#" onclick="openDatenschutz(); return false;">Datenschutzerklärung</a>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- MAP COLUMN -->
+  <div class="map-column">
+    <div class="radius-bar">
+      <div class="r-label">Radius</div>
+      <div class="radius-presets">
+        <button class="preset-btn"        onclick="setRadius(10)">10 m</button>
+        <button class="preset-btn"        onclick="setRadius(50)">50 m</button>
+        <button class="preset-btn"        onclick="setRadius(100)">100 m</button>
+        <button class="preset-btn active" onclick="setRadius(250)">250 m</button>
+        <button class="preset-btn"        onclick="setRadius(500)">500 m</button>
+        <button class="preset-btn"        onclick="setRadius(1000)">1 km</button>
+        <button class="preset-btn"        onclick="setRadius(2500)">2,5 km</button>
+        <button class="preset-btn"        onclick="setRadius(5000)">5 km</button>
+        <button class="preset-btn"        onclick="setRadius(10000)">10 km</button>
+      </div>
+      <div class="slider-wrap">
+        <span class="sl-end">10 m</span>
+        <input type="range" id="radius-slider" min="0" max="100" value="43" oninput="onSliderChange(this.value)"/>
+        <span class="sl-end">10 km</span>
+      </div>
+      <div class="radius-value-display" id="radius-display">250 m</div>
+      <button class="autozoom-btn on" id="autozoom-btn" onclick="toggleAutoZoom()">
+        <span class="az-dot"></span>Auto-Zoom
+      </button>
+    </div>
+
+    <div id="map"></div>
+    <div class="map-hint-overlay" id="map-hint">Auf Karte klicken — Punkt setzen</div>
+
+    <div class="coord-status">
+      <div class="dot" id="status-dot-map"></div>
+      <span class="coords-text" id="coords-display">Noch kein Punkt gesetzt</span>
+    </div>
+
+    <div class="manual-input-bar">
+      <div class="m-label">Manuell</div>
+      <input type="text" id="gmaps-input" placeholder="Lat, Long  —  z.B. 49.01244, 12.03273 (aus Google Maps)" />
+      <button class="btn-parse" onclick="parseGMaps()">Setzen</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="section">
+      <div class="section-title">Betriebsstellen</div>
+      <div style="display:flex; flex-direction:column; gap:5px; font-size:11px; color:#9ba3c0;">
+        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e8542a;margin-right:7px;vertical-align:middle;"></span>Strecke 5850</div>
+        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1a6fbb;margin-right:7px;vertical-align:middle;"></span>Strecke 5904</div>
+        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#5db83a;margin-right:7px;vertical-align:middle;"></span>Strecke 5903</div>
+        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9b59b6;margin-right:7px;vertical-align:middle;"></span>Strecke 5010</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Zu Betriebsstelle springen</div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input type="text" id="jump-input" placeholder="z.B. Parsberg oder 5850"
+          style="flex:1; background:#1a1f2e; border:1px solid #2a3148; border-radius:6px;
+                 padding:7px 10px; font-size:12px; color:#e8eaf0; outline:none; font-family:inherit;"
+          oninput="showJumpSuggestions(this.value)"
+          onkeydown="if(event.key==='Enter') jumpToFirst()"/>
+        <button onclick="jumpToFirst()"
+          style="background:#e8542a; color:white; border:none; border-radius:6px;
+                 padding:7px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;">
+          ↵
+        </button>
+      </div>
+      <div id="jump-suggestions" style="margin-top:6px; display:flex; flex-direction:column; gap:3px;"></div>
+    </div>
+
+    <div class="section" style="flex:1;">
+      <div class="section-title">
+        <span class="status-dot" id="status-dot"></span>Koordinaten für DiBa
+      </div>
+      <div class="diba-panel">
+        <div class="diba-panel-header">
+          <span class="diba-badge">DiBa</span>
+          <span class="diba-title-text">Koordinaten für Geo-Daten Filter</span>
+          <div class="funnel-icon-wrap">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1.5 2.5 L14.5 2.5 L9.5 8.0 L9.5 13.0 L8.5 13.8 L6.5 13.0 L6.5 8.0 Z" fill="white"/>
+            </svg>
+          </div>
+        </div>
+        <div class="filter-rows">
+          <div class="filter-group-sep">Latitude</div>
+          <div class="filter-row">
+            <div class="field-name">LATITUDE</div>
+            <div class="operator">größer gleich</div>
+            <div class="coord-value empty" id="val-lat-min">—</div>
+            <button class="btn-copy" onclick="copyVal('val-lat-min', this)">Kopieren</button>
+          </div>
+          <div class="filter-row">
+            <div class="field-name">LATITUDE</div>
+            <div class="operator">kleiner gleich</div>
+            <div class="coord-value empty" id="val-lat-max">—</div>
+            <button class="btn-copy" onclick="copyVal('val-lat-max', this)">Kopieren</button>
+          </div>
+          <div class="filter-group-sep">Longitude</div>
+          <div class="filter-row">
+            <div class="field-name">LONGITUDE</div>
+            <div class="operator">größer gleich</div>
+            <div class="coord-value empty" id="val-long-min">—</div>
+            <button class="btn-copy" onclick="copyVal('val-long-min', this)">Kopieren</button>
+          </div>
+          <div class="filter-row">
+            <div class="field-name">LONGITUDE</div>
+            <div class="operator">kleiner gleich</div>
+            <div class="coord-value empty" id="val-long-max">—</div>
+            <button class="btn-copy" onclick="copyVal('val-long-max', this)">Kopieren</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Datenschutz Modal -->
+<div class="modal-overlay" id="datenschutz-modal" onclick="closeDatenschutzOnOverlay(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Datenschutzerklärung</h2>
+      <button class="modal-close" onclick="closeDatenschutz()" title="Schließen">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="highlight">
+        <strong>Kurzfassung:</strong> Diese Anwendung verarbeitet ausschließlich Koordinaten, die Sie selbst eingeben oder auf der Karte auswählen. Es werden keine Daten gespeichert oder an Dritte weitergegeben.
+      </div>
+      <h3>1. Verantwortliche Stelle</h3>
+      <p>Diese Webanwendung wird intern betrieben und richtet sich ausschließlich an autorisierte Mitarbeiterinnen und Mitarbeiter.</p>
+      <h3>2. Zweck der Anwendung</h3>
+      <p>Die <em>Koordinaten Filter Box</em> ist ein internes Hilfswerkzeug zur Berechnung geografischer Bounding Boxes für den Geo-Daten Filter im System DiBa.</p>
+      <h3>3. Verarbeitung personenbezogener Daten</h3>
+      <p>Diese Anwendung verarbeitet <strong>keine personenbezogenen Daten</strong>. Es werden keine Cookies gesetzt und kein Tracking durchgeführt. Alle Berechnungen finden ausschließlich lokal in Ihrem Browser statt.</p>
+      <h3>4. Kartendaten (externe Dienste)</h3>
+      <p>Für die Kartenanzeige werden Kartenkacheln von OpenStreetMap / CARTO geladen (<code>basemaps.cartocdn.com</code>). Dabei wird Ihre IP-Adresse technisch notwendigerweise übertragen. Datenschutzhinweise: <a href="https://carto.com/privacy/" target="_blank" rel="noopener">carto.com/privacy</a></p>
+      <h3>5. Kartenbibliothek (Leaflet)</h3>
+      <p>Leaflet wird über <code>unpkg.com</code> geladen. Beim ersten Laden kann Ihre IP-Adresse übermittelt werden. Leaflet speichert keine Nutzerdaten.</p>
+      <h3>6. Ihre Rechte</h3>
+      <p>Bei Fragen zum Datenschutz wenden Sie sich bitte an den betrieblichen Datenschutzbeauftragten.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEG2RAD = Math.PI / 180;
+let marker = null, boundingBox = null;
+let currentLat = null, currentLng = null;
+let currentRadius = 250;
+let autoZoom = true;
+
+// ── Map ──
+const map = L.map('map', { zoomControl: true }).setView([49.1970791, 11.3597205], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap contributors © CARTO', maxZoom: 19
+}).addTo(map);
+map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng));
+
+// ── Betriebsstellen-Punkte ──
+// Strecke 5850 – 659 Punkte (100m gefiltert)
+const betriebsstellen = {
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.10222, 49.01167] }, "properties": { "name": "5850--0.190", "km": "-0.190", "label": "km-0.190", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.1036, 49.01169] }, "properties": { "name": "5850--0.290", "km": "-0.290", "label": "km-0.290", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.09966, 49.01159] }, "properties": { "name": "5850-0.000 [BST] NRH---Bf       Regensburg Hbf", "km": "0.000", "label": "km0.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.09811, 49.01162] }, "properties": { "name": "5850-0.100", "km": "0.100", "label": "km0.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.09538, 49.01159] }, "properties": { "name": "5850-0.300", "km": "0.300", "label": "km0.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.09266, 49.01157] }, "properties": { "name": "5850-0.500", "km": "0.500", "label": "km0.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.08995, 49.01156] }, "properties": { "name": "5850-0.700", "km": "0.700", "label": "km0.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.08726, 49.01148] }, "properties": { "name": "5850-0.900", "km": "0.900", "label": "km0.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.08456, 49.01141] }, "properties": { "name": "5850-1.100", "km": "1.100", "label": "km1.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.08187, 49.01136] }, "properties": { "name": "5850-1.300", "km": "1.300", "label": "km1.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.07917, 49.01134] }, "properties": { "name": "5850-1.500", "km": "1.500", "label": "km1.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.07647, 49.01141] }, "properties": { "name": "5850-1.700", "km": "1.700", "label": "km1.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.07378, 49.01151] }, "properties": { "name": "5850-1.900", "km": "1.900", "label": "km1.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.07109, 49.0116] }, "properties": { "name": "5850-2.100", "km": "2.100", "label": "km2.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.0684, 49.01174] }, "properties": { "name": "5850-2.300", "km": "2.300", "label": "km2.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.06571, 49.01189] }, "properties": { "name": "5850-2.500", "km": "2.500", "label": "km2.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.06302, 49.01205] }, "properties": { "name": "5850-2.700", "km": "2.700", "label": "km2.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.06162, 49.01213] }, "properties": { "name": "5850-2.800", "km": "2.800", "label": "km2.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.06014, 49.01222] }, "properties": { "name": "5850-2.900", "km": "2.900", "label": "km2.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.05876, 49.01226] }, "properties": { "name": "5850-3.000", "km": "3.000", "label": "km3.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.05714, 49.01228] }, "properties": { "name": "5850-3.120", "km": "3.120", "label": "km3.120", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.05469, 49.01224] }, "properties": { "name": "5850-3.300", "km": "3.300", "label": "km3.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.0533, 49.01224] }, "properties": { "name": "5850-3.400", "km": "3.400", "label": "km3.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.05191, 49.01211] }, "properties": { "name": "5850-3.500", "km": "3.500", "label": "km3.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.05054, 49.01193] }, "properties": { "name": "5850-3.600", "km": "3.600", "label": "km3.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.04896, 49.01167] }, "properties": { "name": "5850-3.700", "km": "3.700", "label": "km3.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.04637, 49.01137] }, "properties": { "name": "5850-3.900", "km": "3.900", "label": "km3.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.04502, 49.01119] }, "properties": { "name": "5850-4.000", "km": "4.000", "label": "km4.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.04366, 49.01106] }, "properties": { "name": "5850-4.100", "km": "4.100", "label": "km4.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.04228, 49.01103] }, "properties": { "name": "5850-4.200", "km": "4.200", "label": "km4.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.0409, 49.01108] }, "properties": { "name": "5850-4.300", "km": "4.300", "label": "km4.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03952, 49.01117] }, "properties": { "name": "5850-4.400", "km": "4.400", "label": "km4.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03815, 49.01127] }, "properties": { "name": "5850-4.500", "km": "4.500", "label": "km4.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03679, 49.01143] }, "properties": { "name": "5850-4.600", "km": "4.600", "label": "km4.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03546, 49.01167] }, "properties": { "name": "5850-4.700", "km": "4.700", "label": "km4.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03417, 49.012] }, "properties": { "name": "5850-4.800", "km": "4.800", "label": "km4.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03291, 49.01237] }, "properties": { "name": "5850-4.900", "km": "4.900", "label": "km4.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03168, 49.01277] }, "properties": { "name": "5850-5.000", "km": "5.000", "label": "km5.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.03043, 49.01317] }, "properties": { "name": "5850-5.100", "km": "5.100", "label": "km5.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.02917, 49.01356] }, "properties": { "name": "5850-5.200", "km": "5.200", "label": "km5.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.02789, 49.01394] }, "properties": { "name": "5850-5.300", "km": "5.300", "label": "km5.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.02655, 49.01421] }, "properties": { "name": "5850-5.400", "km": "5.400", "label": "km5.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.02386, 49.01427] }, "properties": { "name": "5850-5.600", "km": "5.600", "label": "km5.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.02121, 49.01395] }, "properties": { "name": "5850-5.800", "km": "5.800", "label": "km5.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.01853, 49.01398] }, "properties": { "name": "5850-6.000", "km": "6.000", "label": "km6.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.0159, 49.01436] }, "properties": { "name": "5850-6.200", "km": "6.200", "label": "km6.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.01334, 49.01491] }, "properties": { "name": "5850-6.400", "km": "6.400", "label": "km6.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.01084, 49.01557] }, "properties": { "name": "5850-6.600", "km": "6.600", "label": "km6.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.00835, 49.01625] }, "properties": { "name": "5850-6.800", "km": "6.800", "label": "km6.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.00609, 49.0172] }, "properties": { "name": "5850-7.000", "km": "7.000", "label": "km7.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.00394, 49.01831] }, "properties": { "name": "5850-7.200", "km": "7.200", "label": "km7.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.0028, 49.01881] }, "properties": { "name": "5850-7.300", "km": "7.300", "label": "km7.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.00163, 49.01929] }, "properties": { "name": "5850-7.400", "km": "7.400", "label": "km7.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.00044, 49.01974] }, "properties": { "name": "5850-7.500", "km": "7.500", "label": "km7.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99919, 49.02011] }, "properties": { "name": "5850-7.600", "km": "7.600", "label": "km7.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99791, 49.02044] }, "properties": { "name": "5850-7.700", "km": "7.700", "label": "km7.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99664, 49.02079] }, "properties": { "name": "5850-7.800", "km": "7.800", "label": "km7.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9954, 49.02118] }, "properties": { "name": "5850-7.900", "km": "7.900", "label": "km7.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99417, 49.02159] }, "properties": { "name": "5850-8.000", "km": "8.000", "label": "km8.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99294, 49.02199] }, "properties": { "name": "5850-8.100", "km": "8.100", "label": "km8.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.99171, 49.0224] }, "properties": { "name": "5850-8.200", "km": "8.200", "label": "km8.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.98929, 49.02325] }, "properties": { "name": "5850-8.400", "km": "8.400", "label": "km8.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.98723, 49.02442] }, "properties": { "name": "5850-8.600", "km": "8.600", "label": "km8.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.98652, 49.02519] }, "properties": { "name": "5850-8.700", "km": "8.700", "label": "km8.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9854, 49.02679] }, "properties": { "name": "5850-8.900", "km": "8.900", "label": "km8.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.98403, 49.0283] }, "properties": { "name": "5850-9.100", "km": "9.100", "label": "km9.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.98205, 49.02947] }, "properties": { "name": "5850-9.300", "km": "9.300", "label": "km9.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.97961, 49.03025] }, "properties": { "name": "5850-9.500", "km": "9.500", "label": "km9.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.97831, 49.03054] }, "properties": { "name": "5850-9.602 [BST] NET---Hp       Etterzhausen", "km": "9.602", "label": "km9.602", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.97673, 49.03083] }, "properties": { "name": "5850-9.720", "km": "9.720", "label": "km9.720", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.97433, 49.03114] }, "properties": { "name": "5850-9.900", "km": "9.900", "label": "km9.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9716, 49.03117] }, "properties": { "name": "5850-10.100", "km": "10.100", "label": "km10.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.96894, 49.03079] }, "properties": { "name": "5850-10.300", "km": "10.300", "label": "km10.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9663, 49.03031] }, "properties": { "name": "5850-10.500", "km": "10.500", "label": "km10.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.96368, 49.02981] }, "properties": { "name": "5850-10.700", "km": "10.700", "label": "km10.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.96105, 49.02931] }, "properties": { "name": "5850-10.900", "km": "10.900", "label": "km10.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.95848, 49.02871] }, "properties": { "name": "5850-11.100", "km": "11.100", "label": "km11.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9572, 49.02838] }, "properties": { "name": "5850-11.200", "km": "11.200", "label": "km11.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.95466, 49.02771] }, "properties": { "name": "5850-11.400", "km": "11.400", "label": "km11.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9534, 49.02735] }, "properties": { "name": "5850-11.500", "km": "11.500", "label": "km11.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.95213, 49.02701] }, "properties": { "name": "5850-11.600", "km": "11.600", "label": "km11.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9496, 49.02632] }, "properties": { "name": "5850-11.800", "km": "11.800", "label": "km11.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.94699, 49.02582] }, "properties": { "name": "5850-12.000", "km": "12.000", "label": "km12.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.94562, 49.02575] }, "properties": { "name": "5850-12.100", "km": "12.100", "label": "km12.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.94295, 49.02611] }, "properties": { "name": "5850-12.300", "km": "12.300", "label": "km12.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.94045, 49.02685] }, "properties": { "name": "5850-12.500", "km": "12.500", "label": "km12.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.93911, 49.02725] }, "properties": { "name": "5850-12.600", "km": "12.600", "label": "km12.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.93676, 49.02794] }, "properties": { "name": "5850-12.800", "km": "12.800", "label": "km12.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.93458, 49.02894] }, "properties": { "name": "5850-13.000", "km": "13.000", "label": "km13.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9327, 49.03007] }, "properties": { "name": "5850-13.190", "km": "13.190", "label": "km13.190", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.93152, 49.03068] }, "properties": { "name": "5850-13.300", "km": "13.300", "label": "km13.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92947, 49.03188] }, "properties": { "name": "5850-13.500", "km": "13.500", "label": "km13.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92844, 49.03248] }, "properties": { "name": "5850-13.600", "km": "13.600", "label": "km13.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9274, 49.03307] }, "properties": { "name": "5850-13.700", "km": "13.700", "label": "km13.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92533, 49.03425] }, "properties": { "name": "5850-13.900", "km": "13.900", "label": "km13.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92324, 49.03542] }, "properties": { "name": "5850-14.100", "km": "14.100", "label": "km14.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92119, 49.03662] }, "properties": { "name": "5850-14.300", "km": "14.300", "label": "km14.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.92014, 49.0372] }, "properties": { "name": "5850-14.400", "km": "14.400", "label": "km14.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91909, 49.03778] }, "properties": { "name": "5850-14.500", "km": "14.500", "label": "km14.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91815, 49.03844] }, "properties": { "name": "5850-14.600", "km": "14.600", "label": "km14.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91727, 49.03913] }, "properties": { "name": "5850-14.700", "km": "14.700", "label": "km14.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91649, 49.03987] }, "properties": { "name": "5850-14.800", "km": "14.800", "label": "km14.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91511, 49.04143] }, "properties": { "name": "5850-15.000", "km": "15.000", "label": "km15.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91441, 49.04221] }, "properties": { "name": "5850-15.100", "km": "15.100", "label": "km15.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91371, 49.043] }, "properties": { "name": "5850-15.200", "km": "15.200", "label": "km15.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91309, 49.04381] }, "properties": { "name": "5850-15.300", "km": "15.300", "label": "km15.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91265, 49.04467] }, "properties": { "name": "5850-15.400", "km": "15.400", "label": "km15.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91244, 49.04557] }, "properties": { "name": "5850-15.500", "km": "15.500", "label": "km15.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91246, 49.04647] }, "properties": { "name": "5850-15.600", "km": "15.600", "label": "km15.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91272, 49.04737] }, "properties": { "name": "5850-15.700", "km": "15.700", "label": "km15.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91311, 49.04824] }, "properties": { "name": "5850-15.800", "km": "15.800", "label": "km15.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91352, 49.04911] }, "properties": { "name": "5850-15.900", "km": "15.900", "label": "km15.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91391, 49.04998] }, "properties": { "name": "5850-16.000", "km": "16.000", "label": "km16.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91403, 49.05175] }, "properties": { "name": "5850-16.200", "km": "16.200", "label": "km16.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91354, 49.0531] }, "properties": { "name": "5850-16.350", "km": "16.350", "label": "km16.350", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91263, 49.05425] }, "properties": { "name": "5850-16.500", "km": "16.500", "label": "km16.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9112, 49.05577] }, "properties": { "name": "5850-16.700", "km": "16.700", "label": "km16.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.91057, 49.05657] }, "properties": { "name": "5850-16.800", "km": "16.800", "label": "km16.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9101, 49.05833] }, "properties": { "name": "5850-17.000", "km": "17.000", "label": "km17.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90986, 49.06011] }, "properties": { "name": "5850-17.200", "km": "17.200", "label": "km17.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90963, 49.061] }, "properties": { "name": "5850-17.300", "km": "17.300", "label": "km17.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90855, 49.06263] }, "properties": { "name": "5850-17.500", "km": "17.500", "label": "km17.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90765, 49.06331] }, "properties": { "name": "5850-17.600", "km": "17.600", "label": "km17.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.9055, 49.06441] }, "properties": { "name": "5850-17.800", "km": "17.800", "label": "km17.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90328, 49.06546] }, "properties": { "name": "5850-18.000", "km": "18.000", "label": "km18.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.90096, 49.0664] }, "properties": { "name": "5850-18.200", "km": "18.200", "label": "km18.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.89965, 49.06682] }, "properties": { "name": "5850-18.300", "km": "18.300", "label": "km18.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.89721, 49.0675] }, "properties": { "name": "5850-18.500", "km": "18.500", "label": "km18.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.89536, 49.068] }, "properties": { "name": "5850-18.640", "km": "18.640", "label": "km18.640", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8933, 49.06831] }, "properties": { "name": "5850-18.800", "km": "18.800", "label": "km18.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8907, 49.06886] }, "properties": { "name": "5850-19.000", "km": "19.000", "label": "km19.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88949, 49.0693] }, "properties": { "name": "5850-19.100", "km": "19.100", "label": "km19.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88825, 49.06969] }, "properties": { "name": "5850-19.200", "km": "19.200", "label": "km19.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88637, 49.07] }, "properties": { "name": "5850-19.340", "km": "19.340", "label": "km19.340", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88436, 49.07001] }, "properties": { "name": "5850-19.493 [BST] NLB---Hp       Laaber", "km": "19.493", "label": "km19.493", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88285, 49.06994] }, "properties": { "name": "5850-19.600", "km": "19.600", "label": "km19.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.88012, 49.07008] }, "properties": { "name": "5850-19.800", "km": "19.800", "label": "km19.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.87764, 49.07084] }, "properties": { "name": "5850-20.000", "km": "20.000", "label": "km20.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.87654, 49.07138] }, "properties": { "name": "5850-20.100", "km": "20.100", "label": "km20.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.87544, 49.07193] }, "properties": { "name": "5850-20.200", "km": "20.200", "label": "km20.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.87327, 49.07304] }, "properties": { "name": "5850-20.400", "km": "20.400", "label": "km20.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8712, 49.07422] }, "properties": { "name": "5850-20.600", "km": "20.600", "label": "km20.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8702, 49.07484] }, "properties": { "name": "5850-20.700", "km": "20.700", "label": "km20.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.86831, 49.07615] }, "properties": { "name": "5850-20.900", "km": "20.900", "label": "km20.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.86653, 49.07751] }, "properties": { "name": "5850-21.100", "km": "21.100", "label": "km21.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.86467, 49.07883] }, "properties": { "name": "5850-21.300", "km": "21.300", "label": "km21.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8628, 49.08014] }, "properties": { "name": "5850-21.500", "km": "21.500", "label": "km21.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.86175, 49.08089] }, "properties": { "name": "5850-21.610", "km": "21.610", "label": "km21.610", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.85993, 49.08207] }, "properties": { "name": "5850-21.800", "km": "21.800", "label": "km21.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.85796, 49.08332] }, "properties": { "name": "5850-22.000", "km": "22.000", "label": "km22.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.85544, 49.08399] }, "properties": { "name": "5850-22.200", "km": "22.200", "label": "km22.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.85272, 49.08404] }, "properties": { "name": "5850-22.400", "km": "22.400", "label": "km22.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.85013, 49.08348] }, "properties": { "name": "5850-22.600", "km": "22.600", "label": "km22.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.84786, 49.08248] }, "properties": { "name": "5850-22.800", "km": "22.800", "label": "km22.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.84553, 49.08153] }, "properties": { "name": "5850-23.000", "km": "23.000", "label": "km23.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.84315, 49.08065] }, "properties": { "name": "5850-23.200", "km": "23.200", "label": "km23.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8405, 49.08024] }, "properties": { "name": "5850-23.400", "km": "23.400", "label": "km23.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.83779, 49.08045] }, "properties": { "name": "5850-23.600", "km": "23.600", "label": "km23.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.83535, 49.08125] }, "properties": { "name": "5850-23.800", "km": "23.800", "label": "km23.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8331, 49.08228] }, "properties": { "name": "5850-24.000", "km": "24.000", "label": "km24.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.83086, 49.08331] }, "properties": { "name": "5850-24.200", "km": "24.200", "label": "km24.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.82843, 49.08412] }, "properties": { "name": "5850-24.400", "km": "24.400", "label": "km24.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.82576, 49.08446] }, "properties": { "name": "5850-24.590", "km": "24.590", "label": "km24.590", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.82438, 49.08455] }, "properties": { "name": "5850-24.700", "km": "24.700", "label": "km24.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.82167, 49.08475] }, "properties": { "name": "5850-24.900", "km": "24.900", "label": "km24.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81911, 49.08537] }, "properties": { "name": "5850-25.100", "km": "25.100", "label": "km25.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81699, 49.0865] }, "properties": { "name": "5850-25.300", "km": "25.300", "label": "km25.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81596, 49.08723] }, "properties": { "name": "5850-25.410", "km": "25.410", "label": "km25.410", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81422, 49.08849] }, "properties": { "name": "5850-25.600", "km": "25.600", "label": "km25.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81234, 49.08979] }, "properties": { "name": "5850-25.800", "km": "25.800", "label": "km25.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.81049, 49.09111] }, "properties": { "name": "5850-26.000", "km": "26.000", "label": "km26.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80862, 49.09242] }, "properties": { "name": "5850-26.200", "km": "26.200", "label": "km26.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80761, 49.09305] }, "properties": { "name": "5850-26.300", "km": "26.300", "label": "km26.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80641, 49.0936] }, "properties": { "name": "5850-26.400", "km": "26.400", "label": "km26.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80504, 49.09388] }, "properties": { "name": "5850-26.500", "km": "26.500", "label": "km26.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80373, 49.09419] }, "properties": { "name": "5850-26.600", "km": "26.600", "label": "km26.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.8025, 49.09462] }, "properties": { "name": "5850-26.700", "km": "26.700", "label": "km26.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80141, 49.09518] }, "properties": { "name": "5850-26.800", "km": "26.800", "label": "km26.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.80036, 49.09578] }, "properties": { "name": "5850-26.900", "km": "26.900", "label": "km26.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7993, 49.09637] }, "properties": { "name": "5850-27.000", "km": "27.000", "label": "km27.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.79715, 49.09746] }, "properties": { "name": "5850-27.200", "km": "27.200", "label": "km27.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.795, 49.09856] }, "properties": { "name": "5850-27.400", "km": "27.400", "label": "km27.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.79387, 49.09927] }, "properties": { "name": "5850-27.510", "km": "27.510", "label": "km27.510", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.79206, 49.10046] }, "properties": { "name": "5850-27.700", "km": "27.700", "label": "km27.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.79133, 49.10123] }, "properties": { "name": "5850-27.800", "km": "27.800", "label": "km27.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7905, 49.10195] }, "properties": { "name": "5850-27.900", "km": "27.900", "label": "km27.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78974, 49.10272] }, "properties": { "name": "5850-28.000", "km": "28.000", "label": "km28.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78897, 49.10348] }, "properties": { "name": "5850-28.100", "km": "28.100", "label": "km28.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78824, 49.10425] }, "properties": { "name": "5850-28.200", "km": "28.200", "label": "km28.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78753, 49.10503] }, "properties": { "name": "5850-28.300", "km": "28.300", "label": "km28.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7868, 49.10581] }, "properties": { "name": "5850-28.400", "km": "28.400", "label": "km28.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78531, 49.10729] }, "properties": { "name": "5850-28.600", "km": "28.600", "label": "km28.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78374, 49.10875] }, "properties": { "name": "5850-28.800", "km": "28.800", "label": "km28.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78195, 49.11009] }, "properties": { "name": "5850-29.000", "km": "29.000", "label": "km29.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.78013, 49.11141] }, "properties": { "name": "5850-29.200", "km": "29.200", "label": "km29.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.77831, 49.11274] }, "properties": { "name": "5850-29.400", "km": "29.400", "label": "km29.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.77648, 49.11406] }, "properties": { "name": "5850-29.600", "km": "29.600", "label": "km29.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.77465, 49.11538] }, "properties": { "name": "5850-29.800", "km": "29.800", "label": "km29.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.77282, 49.1167] }, "properties": { "name": "5850-30.000", "km": "30.000", "label": "km30.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.771, 49.11802] }, "properties": { "name": "5850-30.200", "km": "30.200", "label": "km30.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76982, 49.11888] }, "properties": { "name": "5850-30.330", "km": "30.330", "label": "km30.330", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76817, 49.12009] }, "properties": { "name": "5850-30.500", "km": "30.500", "label": "km30.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76722, 49.12076] }, "properties": { "name": "5850-30.600", "km": "30.600", "label": "km30.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76627, 49.12144] }, "properties": { "name": "5850-30.700", "km": "30.700", "label": "km30.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76444, 49.12275] }, "properties": { "name": "5850-30.900", "km": "30.900", "label": "km30.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76245, 49.12396] }, "properties": { "name": "5850-31.100", "km": "31.100", "label": "km31.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.76032, 49.12506] }, "properties": { "name": "5850-31.300", "km": "31.300", "label": "km31.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.75817, 49.12615] }, "properties": { "name": "5850-31.500", "km": "31.500", "label": "km31.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.75601, 49.12723] }, "properties": { "name": "5850-31.700", "km": "31.700", "label": "km31.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.75386, 49.12831] }, "properties": { "name": "5850-31.900", "km": "31.900", "label": "km31.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.75176, 49.12943] }, "properties": { "name": "5850-32.100", "km": "32.100", "label": "km32.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74957, 49.13048] }, "properties": { "name": "5850-32.300", "km": "32.300", "label": "km32.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74763, 49.13172] }, "properties": { "name": "5850-32.500", "km": "32.500", "label": "km32.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74601, 49.13314] }, "properties": { "name": "5850-32.700", "km": "32.700", "label": "km32.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74477, 49.13475] }, "properties": { "name": "5850-32.900", "km": "32.900", "label": "km32.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74431, 49.1356] }, "properties": { "name": "5850-33.000", "km": "33.000", "label": "km33.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7439, 49.13647] }, "properties": { "name": "5850-33.100", "km": "33.100", "label": "km33.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74321, 49.13822] }, "properties": { "name": "5850-33.300", "km": "33.300", "label": "km33.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7429, 49.1391] }, "properties": { "name": "5850-33.400", "km": "33.400", "label": "km33.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74258, 49.13998] }, "properties": { "name": "5850-33.500", "km": "33.500", "label": "km33.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7421, 49.14083] }, "properties": { "name": "5850-33.600", "km": "33.600", "label": "km33.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.7415, 49.14165] }, "properties": { "name": "5850-33.700", "km": "33.700", "label": "km33.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74076, 49.14241] }, "properties": { "name": "5850-33.800", "km": "33.800", "label": "km33.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.74, 49.14316] }, "properties": { "name": "5850-33.900", "km": "33.900", "label": "km33.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73924, 49.14391] }, "properties": { "name": "5850-34.000", "km": "34.000", "label": "km34.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73848, 49.14466] }, "properties": { "name": "5850-34.100", "km": "34.100", "label": "km34.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73698, 49.14617] }, "properties": { "name": "5850-34.300", "km": "34.300", "label": "km34.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73624, 49.14693] }, "properties": { "name": "5850-34.400", "km": "34.400", "label": "km34.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73548, 49.14768] }, "properties": { "name": "5850-34.500", "km": "34.500", "label": "km34.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73464, 49.1484] }, "properties": { "name": "5850-34.600", "km": "34.600", "label": "km34.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73345, 49.15002] }, "properties": { "name": "5850-34.800", "km": "34.800", "label": "km34.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73264, 49.15174] }, "properties": { "name": "5850-35.000", "km": "35.000", "label": "km35.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73241, 49.15263] }, "properties": { "name": "5850-35.100", "km": "35.100", "label": "km35.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73208, 49.15443] }, "properties": { "name": "5850-35.300", "km": "35.300", "label": "km35.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73176, 49.15621] }, "properties": { "name": "5850-35.500", "km": "35.500", "label": "km35.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73143, 49.158] }, "properties": { "name": "5850-35.700", "km": "35.700", "label": "km35.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73116, 49.15976] }, "properties": { "name": "5850-35.900", "km": "35.900", "label": "km35.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.73017, 49.16139] }, "properties": { "name": "5850-36.100", "km": "36.100", "label": "km36.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.72846, 49.16274] }, "properties": { "name": "5850-36.300", "km": "36.300", "label": "km36.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.72612, 49.16359] }, "properties": { "name": "5850-36.500", "km": "36.500", "label": "km36.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.72413, 49.16415] }, "properties": { "name": "5850-36.660", "km": "36.660", "label": "km36.660", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.72233, 49.1646] }, "properties": { "name": "5850-36.800", "km": "36.800", "label": "km36.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.72101, 49.1649] }, "properties": { "name": "5850-36.900", "km": "36.900", "label": "km36.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.71834, 49.1653] }, "properties": { "name": "5850-37.100", "km": "37.100", "label": "km37.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.71697, 49.1654] }, "properties": { "name": "5850-37.200", "km": "37.200", "label": "km37.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.71424, 49.16539] }, "properties": { "name": "5850-37.400", "km": "37.400", "label": "km37.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.71155, 49.16505] }, "properties": { "name": "5850-37.600", "km": "37.600", "label": "km37.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.70887, 49.16465] }, "properties": { "name": "5850-37.800", "km": "37.800", "label": "km37.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.70615, 49.16436] }, "properties": { "name": "5850-38.000", "km": "38.000", "label": "km38.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.70342, 49.16419] }, "properties": { "name": "5850-38.200", "km": "38.200", "label": "km38.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.70205, 49.1641] }, "properties": { "name": "5850-38.300", "km": "38.300", "label": "km38.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.69931, 49.16397] }, "properties": { "name": "5850-38.500", "km": "38.500", "label": "km38.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.69657, 49.1639] }, "properties": { "name": "5850-38.700", "km": "38.700", "label": "km38.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.69519, 49.16389] }, "properties": { "name": "5850-38.800", "km": "38.800", "label": "km38.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.69246, 49.16392] }, "properties": { "name": "5850-39.000", "km": "39.000", "label": "km39.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.68975, 49.16405] }, "properties": { "name": "5850-39.200", "km": "39.200", "label": "km39.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.68703, 49.1641] }, "properties": { "name": "5850-39.400", "km": "39.400", "label": "km39.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.68433, 49.16393] }, "properties": { "name": "5850-39.600", "km": "39.600", "label": "km39.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.68173, 49.16341] }, "properties": { "name": "5850-39.800", "km": "39.800", "label": "km39.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.67929, 49.16261] }, "properties": { "name": "5850-40.000", "km": "40.000", "label": "km40.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.67684, 49.16179] }, "properties": { "name": "5850-40.200", "km": "40.200", "label": "km40.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.67561, 49.16138] }, "properties": { "name": "5850-40.300", "km": "40.300", "label": "km40.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.67311, 49.16064] }, "properties": { "name": "5850-40.500", "km": "40.500", "label": "km40.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.67039, 49.16051] }, "properties": { "name": "5850-40.700", "km": "40.700", "label": "km40.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.66773, 49.16092] }, "properties": { "name": "5850-40.900", "km": "40.900", "label": "km40.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.66545, 49.16189] }, "properties": { "name": "5850-41.100", "km": "41.100", "label": "km41.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.66448, 49.16253] }, "properties": { "name": "5850-41.200", "km": "41.200", "label": "km41.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.66346, 49.16314] }, "properties": { "name": "5850-41.300", "km": "41.300", "label": "km41.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.66145, 49.16436] }, "properties": { "name": "5850-41.500", "km": "41.500", "label": "km41.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.65899, 49.16515] }, "properties": { "name": "5850-41.700", "km": "41.700", "label": "km41.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.65628, 49.16539] }, "properties": { "name": "5850-41.900", "km": "41.900", "label": "km41.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6536, 49.16502] }, "properties": { "name": "5850-42.100", "km": "42.100", "label": "km42.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.65229, 49.16474] }, "properties": { "name": "5850-42.200", "km": "42.200", "label": "km42.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6496, 49.16443] }, "properties": { "name": "5850-42.400", "km": "42.400", "label": "km42.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.64688, 49.16467] }, "properties": { "name": "5850-42.600", "km": "42.600", "label": "km42.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6442, 49.16506] }, "properties": { "name": "5850-42.800", "km": "42.800", "label": "km42.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.64152, 49.16546] }, "properties": { "name": "5850-43.000", "km": "43.000", "label": "km43.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.63884, 49.16585] }, "properties": { "name": "5850-43.200", "km": "43.200", "label": "km43.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.63616, 49.16625] }, "properties": { "name": "5850-43.400", "km": "43.400", "label": "km43.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.63348, 49.16665] }, "properties": { "name": "5850-43.600", "km": "43.600", "label": "km43.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6308, 49.16705] }, "properties": { "name": "5850-43.800", "km": "43.800", "label": "km43.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62938, 49.16733] }, "properties": { "name": "5850-43.900", "km": "43.900", "label": "km43.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62789, 49.16771] }, "properties": { "name": "5850-44.020", "km": "44.020", "label": "km44.020", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62573, 49.16841] }, "properties": { "name": "5850-44.200", "km": "44.200", "label": "km44.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6246, 49.16894] }, "properties": { "name": "5850-44.300", "km": "44.300", "label": "km44.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62354, 49.16952] }, "properties": { "name": "5850-44.400", "km": "44.400", "label": "km44.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62255, 49.17015] }, "properties": { "name": "5850-44.500", "km": "44.500", "label": "km44.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.62091, 49.17159] }, "properties": { "name": "5850-44.700", "km": "44.700", "label": "km44.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61948, 49.17313] }, "properties": { "name": "5850-44.900", "km": "44.900", "label": "km44.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61806, 49.17467] }, "properties": { "name": "5850-45.100", "km": "45.100", "label": "km45.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61663, 49.17621] }, "properties": { "name": "5850-45.300", "km": "45.300", "label": "km45.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61521, 49.17775] }, "properties": { "name": "5850-45.500", "km": "45.500", "label": "km45.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61449, 49.17852] }, "properties": { "name": "5850-45.600", "km": "45.600", "label": "km45.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61307, 49.18005] }, "properties": { "name": "5850-45.800", "km": "45.800", "label": "km45.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.61235, 49.18082] }, "properties": { "name": "5850-45.900", "km": "45.900", "label": "km45.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.6116, 49.18158] }, "properties": { "name": "5850-46.000", "km": "46.000", "label": "km46.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.60983, 49.18295] }, "properties": { "name": "5850-46.200", "km": "46.200", "label": "km46.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.60773, 49.18411] }, "properties": { "name": "5850-46.400", "km": "46.400", "label": "km46.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.60538, 49.18503] }, "properties": { "name": "5850-46.600", "km": "46.600", "label": "km46.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.60292, 49.18583] }, "properties": { "name": "5850-46.800", "km": "46.800", "label": "km46.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.60046, 49.18663] }, "properties": { "name": "5850-47.000", "km": "47.000", "label": "km47.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59923, 49.18706] }, "properties": { "name": "5850-47.100", "km": "47.100", "label": "km47.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59805, 49.18758] }, "properties": { "name": "5850-47.200", "km": "47.200", "label": "km47.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59695, 49.18817] }, "properties": { "name": "5850-47.300", "km": "47.300", "label": "km47.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59591, 49.18881] }, "properties": { "name": "5850-47.400", "km": "47.400", "label": "km47.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59493, 49.18949] }, "properties": { "name": "5850-47.500", "km": "47.500", "label": "km47.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59413, 49.19026] }, "properties": { "name": "5850-47.600", "km": "47.600", "label": "km47.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59323, 49.19136] }, "properties": { "name": "5850-47.750", "km": "47.750", "label": "km47.750", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59227, 49.19251] }, "properties": { "name": "5850-47.900", "km": "47.900", "label": "km47.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59161, 49.1933] }, "properties": { "name": "5850-48.000", "km": "48.000", "label": "km48.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.59095, 49.19409] }, "properties": { "name": "5850-48.100", "km": "48.100", "label": "km48.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.58963, 49.19567] }, "properties": { "name": "5850-48.300", "km": "48.300", "label": "km48.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.58799, 49.1971] }, "properties": { "name": "5850-48.500", "km": "48.500", "label": "km48.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.58692, 49.19767] }, "properties": { "name": "5850-48.600", "km": "48.600", "label": "km48.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.58443, 49.19842] }, "properties": { "name": "5850-48.800", "km": "48.800", "label": "km48.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.58172, 49.19863] }, "properties": { "name": "5850-49.000", "km": "49.000", "label": "km49.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.57909, 49.19819] }, "properties": { "name": "5850-49.200", "km": "49.200", "label": "km49.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.5778, 49.19787] }, "properties": { "name": "5850-49.300", "km": "49.300", "label": "km49.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.57522, 49.19726] }, "properties": { "name": "5850-49.500", "km": "49.500", "label": "km49.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.57251, 49.19702] }, "properties": { "name": "5850-49.700", "km": "49.700", "label": "km49.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.56977, 49.19689] }, "properties": { "name": "5850-49.900", "km": "49.900", "label": "km49.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.5684, 49.1968] }, "properties": { "name": "5850-50.000", "km": "50.000", "label": "km50.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.56567, 49.19664] }, "properties": { "name": "5850-50.200", "km": "50.200", "label": "km50.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.56293, 49.19662] }, "properties": { "name": "5850-50.400", "km": "50.400", "label": "km50.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.56029, 49.19711] }, "properties": { "name": "5850-50.600", "km": "50.600", "label": "km50.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.55768, 49.19766] }, "properties": { "name": "5850-50.800", "km": "50.800", "label": "km50.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.55507, 49.19822] }, "properties": { "name": "5850-51.000", "km": "51.000", "label": "km51.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.55246, 49.19877] }, "properties": { "name": "5850-51.200", "km": "51.200", "label": "km51.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.54981, 49.19924] }, "properties": { "name": "5850-51.400", "km": "51.400", "label": "km51.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.54708, 49.19942] }, "properties": { "name": "5850-51.600", "km": "51.600", "label": "km51.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.54438, 49.19969] }, "properties": { "name": "5850-51.800", "km": "51.800", "label": "km51.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.54194, 49.2005] }, "properties": { "name": "5850-52.000", "km": "52.000", "label": "km52.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.53978, 49.20161] }, "properties": { "name": "5850-52.200", "km": "52.200", "label": "km52.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.53737, 49.20245] }, "properties": { "name": "5850-52.400", "km": "52.400", "label": "km52.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.53606, 49.20274] }, "properties": { "name": "5850-52.500", "km": "52.500", "label": "km52.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.53345, 49.20329] }, "properties": { "name": "5850-52.700", "km": "52.700", "label": "km52.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.53084, 49.20385] }, "properties": { "name": "5850-52.900", "km": "52.900", "label": "km52.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.52823, 49.20441] }, "properties": { "name": "5850-53.100", "km": "53.100", "label": "km53.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.52561, 49.20495] }, "properties": { "name": "5850-53.300", "km": "53.300", "label": "km53.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.52289, 49.20509] }, "properties": { "name": "5850-53.500", "km": "53.500", "label": "km53.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.52153, 49.20494] }, "properties": { "name": "5850-53.600", "km": "53.600", "label": "km53.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.51886, 49.20451] }, "properties": { "name": "5850-53.800", "km": "53.800", "label": "km53.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.51619, 49.2041] }, "properties": { "name": "5850-54.000", "km": "54.000", "label": "km54.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.51422, 49.20382] }, "properties": { "name": "5850-54.140", "km": "54.140", "label": "km54.140", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.51215, 49.20367] }, "properties": { "name": "5850-54.300", "km": "54.300", "label": "km54.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.51077, 49.20366] }, "properties": { "name": "5850-54.400", "km": "54.400", "label": "km54.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.50804, 49.20376] }, "properties": { "name": "5850-54.600", "km": "54.600", "label": "km54.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.50541, 49.20425] }, "properties": { "name": "5850-54.800", "km": "54.800", "label": "km54.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.50291, 49.205] }, "properties": { "name": "5850-55.000", "km": "55.000", "label": "km55.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.50054, 49.20591] }, "properties": { "name": "5850-55.200", "km": "55.200", "label": "km55.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.49818, 49.20683] }, "properties": { "name": "5850-55.400", "km": "55.400", "label": "km55.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.49565, 49.2075] }, "properties": { "name": "5850-55.600", "km": "55.600", "label": "km55.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.49293, 49.20772] }, "properties": { "name": "5850-55.800", "km": "55.800", "label": "km55.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.49156, 49.20781] }, "properties": { "name": "5850-55.900", "km": "55.900", "label": "km55.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48883, 49.20798] }, "properties": { "name": "5850-56.100", "km": "56.100", "label": "km56.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4862, 49.20847] }, "properties": { "name": "5850-56.300", "km": "56.300", "label": "km56.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48403, 49.20955] }, "properties": { "name": "5850-56.500", "km": "56.500", "label": "km56.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48239, 49.21098] }, "properties": { "name": "5850-56.700", "km": "56.700", "label": "km56.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48179, 49.21179] }, "properties": { "name": "5850-56.800", "km": "56.800", "label": "km56.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48143, 49.21357] }, "properties": { "name": "5850-57.000", "km": "57.000", "label": "km57.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48106, 49.21535] }, "properties": { "name": "5850-57.200", "km": "57.200", "label": "km57.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.48043, 49.21646] }, "properties": { "name": "5850-57.330", "km": "57.330", "label": "km57.330", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47913, 49.2177] }, "properties": { "name": "5850-57.500", "km": "57.500", "label": "km57.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47707, 49.21878] }, "properties": { "name": "5850-57.690", "km": "57.690", "label": "km57.690", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47583, 49.2193] }, "properties": { "name": "5850-57.800", "km": "57.800", "label": "km57.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47366, 49.22039] }, "properties": { "name": "5850-58.000", "km": "58.000", "label": "km58.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47213, 49.22187] }, "properties": { "name": "5850-58.200", "km": "58.200", "label": "km58.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47167, 49.22272] }, "properties": { "name": "5850-58.300", "km": "58.300", "label": "km58.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47112, 49.22448] }, "properties": { "name": "5850-58.500", "km": "58.500", "label": "km58.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47076, 49.22535] }, "properties": { "name": "5850-58.600", "km": "58.600", "label": "km58.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47003, 49.22631] }, "properties": { "name": "5850-58.720", "km": "58.720", "label": "km58.720", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4686, 49.22763] }, "properties": { "name": "5850-58.900", "km": "58.900", "label": "km58.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46788, 49.2284] }, "properties": { "name": "5850-59.000", "km": "59.000", "label": "km59.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46699, 49.23009] }, "properties": { "name": "5850-59.200", "km": "59.200", "label": "km59.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46663, 49.23096] }, "properties": { "name": "5850-59.300", "km": "59.300", "label": "km59.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46622, 49.23182] }, "properties": { "name": "5850-59.400", "km": "59.400", "label": "km59.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46568, 49.23265] }, "properties": { "name": "5850-59.500", "km": "59.500", "label": "km59.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46441, 49.23424] }, "properties": { "name": "5850-59.700", "km": "59.700", "label": "km59.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46387, 49.23507] }, "properties": { "name": "5850-59.800", "km": "59.800", "label": "km59.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46346, 49.23684] }, "properties": { "name": "5850-60.000", "km": "60.000", "label": "km60.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.464, 49.23859] }, "properties": { "name": "5850-60.200", "km": "60.200", "label": "km60.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46547, 49.2401] }, "properties": { "name": "5850-60.400", "km": "60.400", "label": "km60.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46719, 49.24149] }, "properties": { "name": "5850-60.600", "km": "60.600", "label": "km60.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46803, 49.24221] }, "properties": { "name": "5850-60.700", "km": "60.700", "label": "km60.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46953, 49.24371] }, "properties": { "name": "5850-60.900", "km": "60.900", "label": "km60.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4705, 49.24539] }, "properties": { "name": "5850-61.100", "km": "61.100", "label": "km61.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47061, 49.24717] }, "properties": { "name": "5850-61.300", "km": "61.300", "label": "km61.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47045, 49.24807] }, "properties": { "name": "5850-61.400", "km": "61.400", "label": "km61.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.47001, 49.24984] }, "properties": { "name": "5850-61.600", "km": "61.600", "label": "km61.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46978, 49.25073] }, "properties": { "name": "5850-61.700", "km": "61.700", "label": "km61.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46956, 49.25162] }, "properties": { "name": "5850-61.800", "km": "61.800", "label": "km61.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46912, 49.25339] }, "properties": { "name": "5850-62.000", "km": "62.000", "label": "km62.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4689, 49.25428] }, "properties": { "name": "5850-62.100", "km": "62.100", "label": "km62.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46868, 49.25517] }, "properties": { "name": "5850-62.200", "km": "62.200", "label": "km62.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46845, 49.25606] }, "properties": { "name": "5850-62.300", "km": "62.300", "label": "km62.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46801, 49.25783] }, "properties": { "name": "5850-62.500", "km": "62.500", "label": "km62.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46781, 49.25872] }, "properties": { "name": "5850-62.600", "km": "62.600", "label": "km62.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46757, 49.25961] }, "properties": { "name": "5850-62.700", "km": "62.700", "label": "km62.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46712, 49.26138] }, "properties": { "name": "5850-62.900", "km": "62.900", "label": "km62.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4669, 49.26227] }, "properties": { "name": "5850-63.000", "km": "63.000", "label": "km63.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46668, 49.26316] }, "properties": { "name": "5850-63.100", "km": "63.100", "label": "km63.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46646, 49.26405] }, "properties": { "name": "5850-63.200", "km": "63.200", "label": "km63.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46576, 49.26578] }, "properties": { "name": "5850-63.400", "km": "63.400", "label": "km63.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46449, 49.26738] }, "properties": { "name": "5850-63.600", "km": "63.600", "label": "km63.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46279, 49.26879] }, "properties": { "name": "5850-63.800", "km": "63.800", "label": "km63.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.46104, 49.27017] }, "properties": { "name": "5850-64.000", "km": "64.000", "label": "km64.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.45927, 49.27155] }, "properties": { "name": "5850-64.200", "km": "64.200", "label": "km64.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4575, 49.27293] }, "properties": { "name": "5850-64.400", "km": "64.400", "label": "km64.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.45578, 49.27425] }, "properties": { "name": "5850-64.600", "km": "64.600", "label": "km64.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.45388, 49.27555] }, "properties": { "name": "5850-64.800", "km": "64.800", "label": "km64.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.45276, 49.27608] }, "properties": { "name": "5850-64.900", "km": "64.900", "label": "km64.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.45154, 49.2765] }, "properties": { "name": "5850-65.000", "km": "65.000", "label": "km65.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.44943, 49.27716] }, "properties": { "name": "5850-65.170", "km": "65.170", "label": "km65.170", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.448, 49.27761] }, "properties": { "name": "5850-65.280", "km": "65.280", "label": "km65.280", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4465, 49.27794] }, "properties": { "name": "5850-65.400", "km": "65.400", "label": "km65.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.44525, 49.27833] }, "properties": { "name": "5850-65.500", "km": "65.500", "label": "km65.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.444, 49.27871] }, "properties": { "name": "5850-65.600", "km": "65.600", "label": "km65.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.44274, 49.2791] }, "properties": { "name": "5850-65.700", "km": "65.700", "label": "km65.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.44149, 49.27948] }, "properties": { "name": "5850-65.800", "km": "65.800", "label": "km65.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.44026, 49.27989] }, "properties": { "name": "5850-65.900", "km": "65.900", "label": "km65.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.43905, 49.28033] }, "properties": { "name": "5850-66.000", "km": "66.000", "label": "km66.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.43654, 49.28107] }, "properties": { "name": "5850-66.200", "km": "66.200", "label": "km66.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.43529, 49.28147] }, "properties": { "name": "5850-66.300", "km": "66.300", "label": "km66.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4328, 49.28226] }, "properties": { "name": "5850-66.500", "km": "66.500", "label": "km66.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.43031, 49.28305] }, "properties": { "name": "5850-66.700", "km": "66.700", "label": "km66.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.42785, 49.28387] }, "properties": { "name": "5850-66.900", "km": "66.900", "label": "km66.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4266, 49.28426] }, "properties": { "name": "5850-67.000", "km": "67.000", "label": "km67.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.42535, 49.28465] }, "properties": { "name": "5850-67.100", "km": "67.100", "label": "km67.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4241, 49.28503] }, "properties": { "name": "5850-67.200", "km": "67.200", "label": "km67.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.42285, 49.28542] }, "properties": { "name": "5850-67.300", "km": "67.300", "label": "km67.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4216, 49.28581] }, "properties": { "name": "5850-67.400", "km": "67.400", "label": "km67.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.42035, 49.2862] }, "properties": { "name": "5850-67.500", "km": "67.500", "label": "km67.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4191, 49.28659] }, "properties": { "name": "5850-67.600", "km": "67.600", "label": "km67.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.41785, 49.28698] }, "properties": { "name": "5850-67.700", "km": "67.700", "label": "km67.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.41536, 49.28776] }, "properties": { "name": "5850-67.900", "km": "67.900", "label": "km67.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.41411, 49.28815] }, "properties": { "name": "5850-68.000", "km": "68.000", "label": "km68.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4128, 49.28856] }, "properties": { "name": "5850-68.100", "km": "68.100", "label": "km68.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.4105, 49.28927] }, "properties": { "name": "5850-68.300", "km": "68.300", "label": "km68.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.40801, 49.29003] }, "properties": { "name": "5850-68.500", "km": "68.500", "label": "km68.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.40553, 49.2908] }, "properties": { "name": "5850-68.700", "km": "68.700", "label": "km68.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.40428, 49.29119] }, "properties": { "name": "5850-68.800", "km": "68.800", "label": "km68.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.40179, 49.29196] }, "properties": { "name": "5850-69.000", "km": "69.000", "label": "km69.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39929, 49.29271] }, "properties": { "name": "5850-69.200", "km": "69.200", "label": "km69.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39804, 49.29309] }, "properties": { "name": "5850-69.300", "km": "69.300", "label": "km69.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39554, 49.29384] }, "properties": { "name": "5850-69.500", "km": "69.500", "label": "km69.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39429, 49.29422] }, "properties": { "name": "5850-69.600", "km": "69.600", "label": "km69.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39304, 49.2946] }, "properties": { "name": "5850-69.700", "km": "69.700", "label": "km69.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.39055, 49.29536] }, "properties": { "name": "5850-69.900", "km": "69.900", "label": "km69.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.38791, 49.29582] }, "properties": { "name": "5850-70.100", "km": "70.100", "label": "km70.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3852, 49.29555] }, "properties": { "name": "5850-70.300", "km": "70.300", "label": "km70.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.38259, 49.29497] }, "properties": { "name": "5850-70.500", "km": "70.500", "label": "km70.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.37999, 49.29439] }, "properties": { "name": "5850-70.700", "km": "70.700", "label": "km70.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.37736, 49.29386] }, "properties": { "name": "5850-70.900", "km": "70.900", "label": "km70.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.37473, 49.29333] }, "properties": { "name": "5850-71.100", "km": "71.100", "label": "km71.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.37201, 49.2931] }, "properties": { "name": "5850-71.300", "km": "71.300", "label": "km71.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.37064, 49.29321] }, "properties": { "name": "5850-71.400", "km": "71.400", "label": "km71.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36806, 49.29381] }, "properties": { "name": "5850-71.600", "km": "71.600", "label": "km71.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36578, 49.29481] }, "properties": { "name": "5850-71.800", "km": "71.800", "label": "km71.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36399, 49.29617] }, "properties": { "name": "5850-72.000", "km": "72.000", "label": "km72.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36244, 49.29761] }, "properties": { "name": "5850-72.190", "km": "72.190", "label": "km72.190", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36171, 49.29842] }, "properties": { "name": "5850-72.300", "km": "72.300", "label": "km72.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.36038, 49.29999] }, "properties": { "name": "5850-72.500", "km": "72.500", "label": "km72.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35983, 49.30082] }, "properties": { "name": "5850-72.600", "km": "72.600", "label": "km72.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35939, 49.30168] }, "properties": { "name": "5850-72.700", "km": "72.700", "label": "km72.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35899, 49.30345] }, "properties": { "name": "5850-72.900", "km": "72.900", "label": "km72.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35897, 49.30435] }, "properties": { "name": "5850-73.000", "km": "73.000", "label": "km73.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35897, 49.30525] }, "properties": { "name": "5850-73.100", "km": "73.100", "label": "km73.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35898, 49.30615] }, "properties": { "name": "5850-73.200", "km": "73.200", "label": "km73.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35899, 49.30706] }, "properties": { "name": "5850-73.300", "km": "73.300", "label": "km73.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35899, 49.30796] }, "properties": { "name": "5850-73.400", "km": "73.400", "label": "km73.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.359, 49.30886] }, "properties": { "name": "5850-73.500", "km": "73.500", "label": "km73.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35895, 49.30977] }, "properties": { "name": "5850-73.600", "km": "73.600", "label": "km73.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35888, 49.31067] }, "properties": { "name": "5850-73.700", "km": "73.700", "label": "km73.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35873, 49.31159] }, "properties": { "name": "5850-73.800", "km": "73.800", "label": "km73.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35835, 49.31247] }, "properties": { "name": "5850-73.900", "km": "73.900", "label": "km73.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3578, 49.31332] }, "properties": { "name": "5850-74.000", "km": "74.000", "label": "km74.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35709, 49.3141] }, "properties": { "name": "5850-74.100", "km": "74.100", "label": "km74.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35551, 49.31555] }, "properties": { "name": "5850-74.300", "km": "74.300", "label": "km74.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35391, 49.31699] }, "properties": { "name": "5850-74.500", "km": "74.500", "label": "km74.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35233, 49.31844] }, "properties": { "name": "5850-74.700", "km": "74.700", "label": "km74.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.35072, 49.31987] }, "properties": { "name": "5850-74.900", "km": "74.900", "label": "km74.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3491, 49.3213] }, "properties": { "name": "5850-75.100", "km": "75.100", "label": "km75.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.34748, 49.32273] }, "properties": { "name": "5850-75.300", "km": "75.300", "label": "km75.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.34585, 49.32416] }, "properties": { "name": "5850-75.500", "km": "75.500", "label": "km75.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.34424, 49.3256] }, "properties": { "name": "5850-75.700", "km": "75.700", "label": "km75.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.34256, 49.327] }, "properties": { "name": "5850-75.900", "km": "75.900", "label": "km75.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.34046, 49.32813] }, "properties": { "name": "5850-76.100", "km": "76.100", "label": "km76.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33826, 49.32919] }, "properties": { "name": "5850-76.300", "km": "76.300", "label": "km76.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33604, 49.33025] }, "properties": { "name": "5850-76.500", "km": "76.500", "label": "km76.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33383, 49.33131] }, "properties": { "name": "5850-76.700", "km": "76.700", "label": "km76.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33271, 49.33184] }, "properties": { "name": "5850-76.800", "km": "76.800", "label": "km76.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33157, 49.33237] }, "properties": { "name": "5850-76.900", "km": "76.900", "label": "km76.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.33036, 49.33283] }, "properties": { "name": "5850-77.000", "km": "77.000", "label": "km77.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32906, 49.33315] }, "properties": { "name": "5850-77.100", "km": "77.100", "label": "km77.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32771, 49.33338] }, "properties": { "name": "5850-77.200", "km": "77.200", "label": "km77.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32631, 49.33338] }, "properties": { "name": "5850-77.300", "km": "77.300", "label": "km77.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32491, 49.33336] }, "properties": { "name": "5850-77.400", "km": "77.400", "label": "km77.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32351, 49.33338] }, "properties": { "name": "5850-77.500", "km": "77.500", "label": "km77.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.32212, 49.3335] }, "properties": { "name": "5850-77.600", "km": "77.600", "label": "km77.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3208, 49.3338] }, "properties": { "name": "5850-77.700", "km": "77.700", "label": "km77.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3196, 49.33427] }, "properties": { "name": "5850-77.800", "km": "77.800", "label": "km77.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31846, 49.33481] }, "properties": { "name": "5850-77.900", "km": "77.900", "label": "km77.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31764, 49.33555] }, "properties": { "name": "5850-78.000", "km": "78.000", "label": "km78.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3162, 49.33704] }, "properties": { "name": "5850-78.200", "km": "78.200", "label": "km78.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31494, 49.33858] }, "properties": { "name": "5850-78.400", "km": "78.400", "label": "km78.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31353, 49.34007] }, "properties": { "name": "5850-78.600", "km": "78.600", "label": "km78.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31187, 49.34132] }, "properties": { "name": "5850-78.780", "km": "78.780", "label": "km78.780", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.31051, 49.34204] }, "properties": { "name": "5850-78.900", "km": "78.900", "label": "km78.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.30923, 49.34251] }, "properties": { "name": "5850-79.000", "km": "79.000", "label": "km79.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.30735, 49.34294] }, "properties": { "name": "5850-79.140", "km": "79.140", "label": "km79.140", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.3053, 49.34316] }, "properties": { "name": "5850-79.300", "km": "79.300", "label": "km79.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.30255, 49.34302] }, "properties": { "name": "5850-79.500", "km": "79.500", "label": "km79.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.29985, 49.34265] }, "properties": { "name": "5850-79.700", "km": "79.700", "label": "km79.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.2971, 49.3426] }, "properties": { "name": "5850-79.900", "km": "79.900", "label": "km79.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.29446, 49.3431] }, "properties": { "name": "5850-80.100", "km": "80.100", "label": "km80.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.292, 49.34392] }, "properties": { "name": "5850-80.300", "km": "80.300", "label": "km80.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28959, 49.3448] }, "properties": { "name": "5850-80.500", "km": "80.500", "label": "km80.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28793, 49.34547] }, "properties": { "name": "5850-80.640", "km": "80.640", "label": "km80.640", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28602, 49.34616] }, "properties": { "name": "5850-80.800", "km": "80.800", "label": "km80.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28483, 49.34662] }, "properties": { "name": "5850-80.900", "km": "80.900", "label": "km80.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28273, 49.34777] }, "properties": { "name": "5850-81.100", "km": "81.100", "label": "km81.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.28127, 49.3493] }, "properties": { "name": "5850-81.300", "km": "81.300", "label": "km81.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27983, 49.35083] }, "properties": { "name": "5850-81.500", "km": "81.500", "label": "km81.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27889, 49.35149] }, "properties": { "name": "5850-81.600", "km": "81.600", "label": "km81.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27665, 49.35232] }, "properties": { "name": "5850-81.800", "km": "81.800", "label": "km81.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27524, 49.35267] }, "properties": { "name": "5850-81.900", "km": "81.900", "label": "km81.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27266, 49.35302] }, "properties": { "name": "5850-82.100", "km": "82.100", "label": "km82.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.27005, 49.35329] }, "properties": { "name": "5850-82.300", "km": "82.300", "label": "km82.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.26746, 49.35364] }, "properties": { "name": "5850-82.500", "km": "82.500", "label": "km82.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.26606, 49.35399] }, "properties": { "name": "5850-82.610", "km": "82.610", "label": "km82.610", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.2639, 49.35491] }, "properties": { "name": "5850-82.800", "km": "82.800", "label": "km82.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.26291, 49.35554] }, "properties": { "name": "5850-82.900", "km": "82.900", "label": "km82.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.26201, 49.35626] }, "properties": { "name": "5850-83.000", "km": "83.000", "label": "km83.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.26031, 49.35767] }, "properties": { "name": "5850-83.200", "km": "83.200", "label": "km83.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25946, 49.35838] }, "properties": { "name": "5850-83.300", "km": "83.300", "label": "km83.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25862, 49.3591] }, "properties": { "name": "5850-83.400", "km": "83.400", "label": "km83.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25776, 49.35981] }, "properties": { "name": "5850-83.500", "km": "83.500", "label": "km83.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25688, 49.36051] }, "properties": { "name": "5850-83.600", "km": "83.600", "label": "km83.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25601, 49.36121] }, "properties": { "name": "5850-83.700", "km": "83.700", "label": "km83.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25514, 49.36192] }, "properties": { "name": "5850-83.800", "km": "83.800", "label": "km83.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25426, 49.36262] }, "properties": { "name": "5850-83.900", "km": "83.900", "label": "km83.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.252, 49.36363] }, "properties": { "name": "5850-84.100", "km": "84.100", "label": "km84.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.25082, 49.3641] }, "properties": { "name": "5850-84.200", "km": "84.200", "label": "km84.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24963, 49.36456] }, "properties": { "name": "5850-84.300", "km": "84.300", "label": "km84.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24725, 49.36547] }, "properties": { "name": "5850-84.500", "km": "84.500", "label": "km84.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24607, 49.36594] }, "properties": { "name": "5850-84.600", "km": "84.600", "label": "km84.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24489, 49.36641] }, "properties": { "name": "5850-84.700", "km": "84.700", "label": "km84.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24253, 49.36734] }, "properties": { "name": "5850-84.900", "km": "84.900", "label": "km84.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.24135, 49.36781] }, "properties": { "name": "5850-85.000", "km": "85.000", "label": "km85.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.23899, 49.36874] }, "properties": { "name": "5850-85.200", "km": "85.200", "label": "km85.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.23781, 49.36921] }, "properties": { "name": "5850-85.300", "km": "85.300", "label": "km85.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.23545, 49.37014] }, "properties": { "name": "5850-85.500", "km": "85.500", "label": "km85.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.23427, 49.37061] }, "properties": { "name": "5850-85.600", "km": "85.600", "label": "km85.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.2322, 49.37142] }, "properties": { "name": "5850-85.770", "km": "85.770", "label": "km85.770", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.23073, 49.37201] }, "properties": { "name": "5850-85.900", "km": "85.900", "label": "km85.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22955, 49.37248] }, "properties": { "name": "5850-86.000", "km": "86.000", "label": "km86.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.2284, 49.37298] }, "properties": { "name": "5850-86.100", "km": "86.100", "label": "km86.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22601, 49.37387] }, "properties": { "name": "5850-86.300", "km": "86.300", "label": "km86.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22483, 49.37434] }, "properties": { "name": "5850-86.400", "km": "86.400", "label": "km86.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22365, 49.37481] }, "properties": { "name": "5850-86.500", "km": "86.500", "label": "km86.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22129, 49.37574] }, "properties": { "name": "5850-86.700", "km": "86.700", "label": "km86.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.22011, 49.37621] }, "properties": { "name": "5850-86.800", "km": "86.800", "label": "km86.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.2178, 49.37712] }, "properties": { "name": "5850-86.990", "km": "86.990", "label": "km86.990", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.21656, 49.37761] }, "properties": { "name": "5850-87.100", "km": "87.100", "label": "km87.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.21537, 49.37808] }, "properties": { "name": "5850-87.200", "km": "87.200", "label": "km87.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.21418, 49.37855] }, "properties": { "name": "5850-87.300", "km": "87.300", "label": "km87.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.21299, 49.37902] }, "properties": { "name": "5850-87.400", "km": "87.400", "label": "km87.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.21157, 49.37957] }, "properties": { "name": "5850-87.520", "km": "87.520", "label": "km87.520", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20941, 49.38032] }, "properties": { "name": "5850-87.700", "km": "87.700", "label": "km87.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20693, 49.3811] }, "properties": { "name": "5850-87.900", "km": "87.900", "label": "km87.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20566, 49.38146] }, "properties": { "name": "5850-88.000", "km": "88.000", "label": "km88.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20439, 49.38182] }, "properties": { "name": "5850-88.100", "km": "88.100", "label": "km88.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20316, 49.38223] }, "properties": { "name": "5850-88.200", "km": "88.200", "label": "km88.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.20066, 49.38298] }, "properties": { "name": "5850-88.400", "km": "88.400", "label": "km88.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.19938, 49.38332] }, "properties": { "name": "5850-88.500", "km": "88.500", "label": "km88.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.19684, 49.384] }, "properties": { "name": "5850-88.700", "km": "88.700", "label": "km88.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.1944, 49.3848] }, "properties": { "name": "5850-88.900", "km": "88.900", "label": "km88.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.19327, 49.38533] }, "properties": { "name": "5850-89.000", "km": "89.000", "label": "km89.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.19234, 49.38603] }, "properties": { "name": "5850-89.100", "km": "89.100", "label": "km89.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.19061, 49.38742] }, "properties": { "name": "5850-89.300", "km": "89.300", "label": "km89.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18932, 49.38895] }, "properties": { "name": "5850-89.500", "km": "89.500", "label": "km89.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18883, 49.3898] }, "properties": { "name": "5850-89.600", "km": "89.600", "label": "km89.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18835, 49.39065] }, "properties": { "name": "5850-89.700", "km": "89.700", "label": "km89.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18796, 49.39156] }, "properties": { "name": "5850-89.800", "km": "89.800", "label": "km89.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18698, 49.39323] }, "properties": { "name": "5850-90.000", "km": "90.000", "label": "km90.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18647, 49.39407] }, "properties": { "name": "5850-90.100", "km": "90.100", "label": "km90.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18532, 49.39569] }, "properties": { "name": "5850-90.300", "km": "90.300", "label": "km90.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18481, 49.39653] }, "properties": { "name": "5850-90.400", "km": "90.400", "label": "km90.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18444, 49.39741] }, "properties": { "name": "5850-90.500", "km": "90.500", "label": "km90.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18349, 49.3991] }, "properties": { "name": "5850-90.700", "km": "90.700", "label": "km90.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18284, 49.3999] }, "properties": { "name": "5850-90.800", "km": "90.800", "label": "km90.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18236, 49.40075] }, "properties": { "name": "5850-90.900", "km": "90.900", "label": "km90.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18143, 49.40245] }, "properties": { "name": "5850-91.100", "km": "91.100", "label": "km91.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18066, 49.40395] }, "properties": { "name": "5850-91.270", "km": "91.270", "label": "km91.270", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.18006, 49.40498] }, "properties": { "name": "5850-91.400", "km": "91.400", "label": "km91.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17907, 49.40666] }, "properties": { "name": "5850-91.600", "km": "91.600", "label": "km91.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17808, 49.40834] }, "properties": { "name": "5850-91.800", "km": "91.800", "label": "km91.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17758, 49.40918] }, "properties": { "name": "5850-91.900", "km": "91.900", "label": "km91.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17653, 49.41084] }, "properties": { "name": "5850-92.100", "km": "92.100", "label": "km92.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17513, 49.41238] }, "properties": { "name": "5850-92.300", "km": "92.300", "label": "km92.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17428, 49.41309] }, "properties": { "name": "5850-92.400", "km": "92.400", "label": "km92.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17334, 49.41376] }, "properties": { "name": "5850-92.500", "km": "92.500", "label": "km92.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17231, 49.41437] }, "properties": { "name": "5850-92.600", "km": "92.600", "label": "km92.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.17005, 49.41541] }, "properties": { "name": "5850-92.800", "km": "92.800", "label": "km92.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16757, 49.41621] }, "properties": { "name": "5850-93.000", "km": "93.000", "label": "km93.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16631, 49.41659] }, "properties": { "name": "5850-93.100", "km": "93.100", "label": "km93.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16504, 49.41696] }, "properties": { "name": "5850-93.200", "km": "93.200", "label": "km93.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16378, 49.41734] }, "properties": { "name": "5850-93.300", "km": "93.300", "label": "km93.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16252, 49.41771] }, "properties": { "name": "5850-93.400", "km": "93.400", "label": "km93.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.16126, 49.41809] }, "properties": { "name": "5850-93.500", "km": "93.500", "label": "km93.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.15999, 49.41846] }, "properties": { "name": "5850-93.600", "km": "93.600", "label": "km93.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.15873, 49.41884] }, "properties": { "name": "5850-93.700", "km": "93.700", "label": "km93.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.15624, 49.41958] }, "properties": { "name": "5850-93.900", "km": "93.900", "label": "km93.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.15375, 49.42032] }, "properties": { "name": "5850-94.100", "km": "94.100", "label": "km94.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.15128, 49.42109] }, "properties": { "name": "5850-94.300", "km": "94.300", "label": "km94.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.14895, 49.42202] }, "properties": { "name": "5850-94.500", "km": "94.500", "label": "km94.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.14673, 49.42307] }, "properties": { "name": "5850-94.700", "km": "94.700", "label": "km94.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.14452, 49.42411] }, "properties": { "name": "5850-94.900", "km": "94.900", "label": "km94.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.14295, 49.42476] }, "properties": { "name": "5850-95.030", "km": "95.030", "label": "km95.030", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.141, 49.42552] }, "properties": { "name": "5850-95.200", "km": "95.200", "label": "km95.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.13985, 49.42602] }, "properties": { "name": "5850-95.300", "km": "95.300", "label": "km95.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.1376, 49.42706] }, "properties": { "name": "5850-95.500", "km": "95.500", "label": "km95.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.13648, 49.42759] }, "properties": { "name": "5850-95.600", "km": "95.600", "label": "km95.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.13422, 49.42862] }, "properties": { "name": "5850-95.800", "km": "95.800", "label": "km95.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.13311, 49.42916] }, "properties": { "name": "5850-95.900", "km": "95.900", "label": "km95.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.13091, 49.43025] }, "properties": { "name": "5850-96.100", "km": "96.100", "label": "km96.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.12972, 49.43084] }, "properties": { "name": "5850-96.200", "km": "96.200", "label": "km96.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.12761, 49.43189] }, "properties": { "name": "5850-96.400", "km": "96.400", "label": "km96.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.12541, 49.43296] }, "properties": { "name": "5850-96.600", "km": "96.600", "label": "km96.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.12429, 49.43349] }, "properties": { "name": "5850-96.700", "km": "96.700", "label": "km96.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.12273, 49.43417] }, "properties": { "name": "5850-96.830", "km": "96.830", "label": "km96.830", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.1209, 49.43505] }, "properties": { "name": "5850-97.000", "km": "97.000", "label": "km97.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11976, 49.43557] }, "properties": { "name": "5850-97.100", "km": "97.100", "label": "km97.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11864, 49.43611] }, "properties": { "name": "5850-97.200", "km": "97.200", "label": "km97.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.1176, 49.43671] }, "properties": { "name": "5850-97.300", "km": "97.300", "label": "km97.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11669, 49.43739] }, "properties": { "name": "5850-97.400", "km": "97.400", "label": "km97.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11559, 49.43859] }, "properties": { "name": "5850-97.550", "km": "97.550", "label": "km97.550", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11479, 49.43969] }, "properties": { "name": "5850-97.700", "km": "97.700", "label": "km97.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11421, 49.44052] }, "properties": { "name": "5850-97.800", "km": "97.800", "label": "km97.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11362, 49.44134] }, "properties": { "name": "5850-97.900", "km": "97.900", "label": "km97.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11303, 49.44217] }, "properties": { "name": "5850-98.000", "km": "98.000", "label": "km98.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11242, 49.44298] }, "properties": { "name": "5850-98.100", "km": "98.100", "label": "km98.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.1118, 49.4438] }, "properties": { "name": "5850-98.200", "km": "98.200", "label": "km98.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.11106, 49.44457] }, "properties": { "name": "5850-98.300", "km": "98.300", "label": "km98.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.10924, 49.44591] }, "properties": { "name": "5850-98.500", "km": "98.500", "label": "km98.500", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.10783, 49.44669] }, "properties": { "name": "5850-98.630", "km": "98.630", "label": "km98.630", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.10587, 49.44738] }, "properties": { "name": "5850-98.800", "km": "98.800", "label": "km98.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.10449, 49.44781] }, "properties": { "name": "5850-98.910", "km": "98.910", "label": "km98.910", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.10207, 49.44824] }, "properties": { "name": "5850-99.100", "km": "99.100", "label": "km99.100", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09938, 49.44814] }, "properties": { "name": "5850-99.300", "km": "99.300", "label": "km99.300", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09777, 49.44787] }, "properties": { "name": "5850-99.420", "km": "99.420", "label": "km99.420", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09534, 49.4475] }, "properties": { "name": "5850-99.600", "km": "99.600", "label": "km99.600", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09394, 49.44736] }, "properties": { "name": "5850-99.700", "km": "99.700", "label": "km99.700", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09255, 49.44722] }, "properties": { "name": "5850-99.800", "km": "99.800", "label": "km99.800", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.09116, 49.44705] }, "properties": { "name": "5850-99.900", "km": "99.900", "label": "km99.900", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.08978, 49.44688] }, "properties": { "name": "5850-100.000", "km": "100.000", "label": "km100.000", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.08714, 49.44637] }, "properties": { "name": "5850-100.200", "km": "100.200", "label": "km100.200", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0846, 49.44569] }, "properties": { "name": "5850-100.400", "km": "100.400", "label": "km100.400", "strecke": "5850", "typ": "" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.08241, 49.44518] }, "properties": { "name": "5850-100.560", "km": "100.560", "label": "km100.560", "strecke": "5850", "typ": "" } }
+  ]
+};
+
+// Farbe je nach Strecke
+const streckeColor = { "5850": "#e8542a", "5904": "#1a6fbb", "5903": "#5db83a", "5010": "#9b59b6" };
+
+L.geoJSON(betriebsstellen, {
+  pointToLayer: (feature, latlng) => {
+    const color = streckeColor[feature.properties.strecke] || "#9ba3c0";
+    const km = feature.properties.km;
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        background:${color}; color:white; font-size:10px; font-weight:700;
+        padding:2px 5px; border-radius:4px; white-space:nowrap;
+        box-shadow:0 1px 3px rgba(0,0,0,0.4); font-family:'Segoe UI',system-ui,sans-serif;
+        border: 1px solid rgba(255,255,255,0.2);
+      ">km${km}</div>`,
+      iconAnchor: [20, 10]
+    });
+    return L.marker(latlng, { icon });
+  },
+  onEachFeature: (feature, layer) => {
+    const p = feature.properties;
+    layer.bindPopup(
+      `<b>${p.name}</b><br>` +
+      `Strecke ${p.strecke} · km ${p.km}<br>` +
+      `<small style="color:#888">${p.typ}</small>`
+    );
+  }
+}).addTo(map);
+
+// ── Sprung zu Betriebsstelle ──
+function showJumpSuggestions(val) {
+  const box = document.getElementById('jump-suggestions');
+  box.innerHTML = '';
+  if (!val || val.length < 2) return;
+  const q = val.toLowerCase();
+  const matches = betriebsstellen.features.filter(f =>
+    f.properties.name.toLowerCase().includes(q) ||
+    f.properties.strecke.includes(q) ||
+    f.properties.km.includes(q)
+  ).slice(0, 5);
+  matches.forEach(f => {
+    const p = f.properties;
+    const btn = document.createElement('button');
+    btn.textContent = `${p.name} · ${p.strecke} km ${p.km}`;
+    btn.style.cssText = `
+      background:#1a1f2e; border:1px solid #2a3148; border-radius:5px;
+      padding:5px 9px; font-size:11px; color:#9ba3c0; cursor:pointer;
+      text-align:left; font-family:inherit; transition:all 0.15s;
+    `;
+    btn.onmouseover = () => btn.style.borderColor = '#e8542a';
+    btn.onmouseout  = () => btn.style.borderColor = '#2a3148';
+    btn.onclick = () => jumpToFeature(f);
+    box.appendChild(btn);
+  });
+}
+
+function jumpToFeature(f) {
+  const [lng, lat] = f.geometry.coordinates;
+  map.setView([lat, lng], 14);
+  document.getElementById('jump-input').value = '';
+  document.getElementById('jump-suggestions').innerHTML = '';
+}
+
+function jumpToFirst() {
+  const val = document.getElementById('jump-input').value.toLowerCase();
+  if (!val) return;
+  const match = betriebsstellen.features.find(f =>
+    f.properties.name.toLowerCase().includes(val) ||
+    f.properties.strecke.includes(val) ||
+    f.properties.km.includes(val)
+  );
+  if (match) jumpToFeature(match);
+}
+
+// ── Auto-Zoom Toggle ──
+function toggleAutoZoom() {
+  autoZoom = !autoZoom;
+  const btn = document.getElementById('autozoom-btn');
+  btn.classList.toggle('on', autoZoom);
+  if (autoZoom && boundingBox) {
+    map.fitBounds(boundingBox.getBounds(), { padding: [60, 60], maxZoom: 16 });
+  }
+}
+
+// ── Radius ──
+const R_MIN = Math.log10(10), R_MAX = Math.log10(10000);
+function sliderToRadius(v) { return Math.round(Math.pow(10, R_MIN + (v / 100) * (R_MAX - R_MIN))); }
+function radiusToSlider(r) { return Math.round(((Math.log10(Math.max(10, Math.min(r, 10000))) - R_MIN) / (R_MAX - R_MIN)) * 100); }
+function formatRadius(r) { return r < 1000 ? r.toLocaleString('de-DE') + ' m' : (r / 1000).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' km'; }
+
+function onSliderChange(val) {
+  currentRadius = sliderToRadius(parseFloat(val));
+  document.getElementById('radius-display').textContent = formatRadius(currentRadius);
+  syncPresetHighlight(currentRadius);
+  recalculate();
+}
+function setRadius(r) {
+  currentRadius = r;
+  document.getElementById('radius-slider').value = radiusToSlider(r);
+  document.getElementById('radius-display').textContent = formatRadius(r);
+  syncPresetHighlight(r);
+  recalculate();
+}
+const PRESETS = [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+function syncPresetHighlight(r) {
+  document.querySelectorAll('.preset-btn').forEach((b, i) => b.classList.toggle('active', PRESETS[i] === r));
+}
+
+// ── Location ──
+function setLocation(lat, lng) {
+  currentLat = lat; currentLng = lng;
+  if (marker) map.removeLayer(marker);
+  marker = L.circleMarker([lat, lng], {
+    radius: 7, color: '#e8542a', fillColor: '#e8542a', fillOpacity: 1, weight: 2
+  }).addTo(map);
+  document.getElementById('map-hint').classList.add('hidden');
+  document.getElementById('coords-display').textContent = lat.toFixed(6) + ', ' + lng.toFixed(6);
+  document.getElementById('status-dot-map').classList.add('active');
+  document.getElementById('status-dot').classList.add('active');
+  recalculate();
+}
+
+function recalculate() {
+  if (currentLat === null) return;
+  const dLat = currentRadius / 111320;
+  const dLng = currentRadius / (111320 * Math.cos(currentLat * DEG2RAD));
+  const latMin = currentLat - dLat, latMax = currentLat + dLat;
+  const lngMin = currentLng - dLng, lngMax = currentLng + dLng;
+  setResult('val-lat-min', latMin);
+  setResult('val-lat-max', latMax);
+  setResult('val-long-min', lngMin);
+  setResult('val-long-max', lngMax);
+  if (boundingBox) map.removeLayer(boundingBox);
+  boundingBox = L.rectangle([[latMin, lngMin],[latMax, lngMax]], {
+    color: '#e8542a', weight: 2, fillColor: '#e8542a', fillOpacity: 0.08
+  }).addTo(map);
+  if (autoZoom) {
+    map.fitBounds(boundingBox.getBounds(), { padding: [60, 60], maxZoom: 16 });
+  }
+}
+
+function setResult(valId, val) {
+  const el = document.getElementById(valId);
+  el.textContent = val.toFixed(10).replace(/0+$/, '').replace(/\.$/, '');
+  el.classList.remove('empty');
+}
+
+// ── Manual input ──
+function parseGMaps() {
+  const raw = document.getElementById('gmaps-input').value.trim();
+  const match = raw.match(/(-?\d+[\.,]\d+)[,;\s]+(-?\d+[\.,]\d+)/);
+  if (!match) { alert('Format nicht erkannt. Bitte "Lat, Long" eingeben.'); return; }
+  const lat = parseFloat(match[1].replace(',', '.'));
+  const lng = parseFloat(match[2].replace(',', '.'));
+  map.setView([lat, lng], 14);
+  setLocation(lat, lng);
+}
+document.getElementById('gmaps-input').addEventListener('keydown', e => { if (e.key === 'Enter') parseGMaps(); });
+
+// ── Copy ──
+function copyVal(id, btn) {
+  const val = document.getElementById(id).textContent;
+  if (val === '—') return;
+  navigator.clipboard.writeText(val).then(() => {
+    btn.textContent = '✓ Kopiert';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Kopieren'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// ── Modals ──
+function openDatenschutz() {
+  document.getElementById('datenschutz-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeDatenschutz() {
+  document.getElementById('datenschutz-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function closeDatenschutzOnOverlay(e) {
+  if (e.target === document.getElementById('datenschutz-modal')) closeDatenschutz();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDatenschutz(); });
+</script>
+
+</body>
+</html>
