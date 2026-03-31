@@ -95,6 +95,16 @@
   .autozoom-btn.on { border-color: #5db83a; color: #97c459; }
   .autozoom-btn.on .az-dot { background: #5db83a; }
   .autozoom-btn:hover { border-color: #e8542a; color: #e8eaf0; }
+  .km-toggle-btn {
+    display: flex; align-items: center; gap: 6px; padding: 4px 11px;
+    font-size: 11px; font-weight: 600; border: 1px solid #2a3148; border-radius: 20px;
+    background: #1a1f2e; color: #9ba3c0; cursor: pointer;
+    transition: all 0.15s; font-family: inherit; white-space: nowrap; flex-shrink: 0;
+  }
+  .km-toggle-btn .az-dot { width: 7px; height: 7px; border-radius: 50%; background: #3a4060; transition: background 0.2s; flex-shrink: 0; }
+  .km-toggle-btn.on { border-color: #1a6fbb; color: #6aaee8; }
+  .km-toggle-btn.on .az-dot { background: #1a6fbb; }
+  .km-toggle-btn:hover { border-color: #e8542a; color: #e8eaf0; }
   #map { flex: 1; background: #0d1117; cursor: crosshair; }
   .map-hint-overlay {
     position: absolute; top: 50%; left: 50%;
@@ -298,6 +308,9 @@
       <button class="autozoom-btn on" id="autozoom-btn" onclick="toggleAutoZoom()">
         <span class="az-dot"></span>Auto-Zoom
       </button>
+      <button class="km-toggle-btn on" id="km-toggle-btn" onclick="toggleKmLabels()">
+        <span class="az-dot"></span>km-Labels
+      </button>
     </div>
 
     <div id="map"></div>
@@ -318,19 +331,9 @@
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="section">
-      <div class="section-title">Betriebsstellen</div>
-      <div style="display:flex; flex-direction:column; gap:5px; font-size:11px; color:#9ba3c0;">
-        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e8542a;margin-right:7px;vertical-align:middle;"></span>Strecke 5850</div>
-        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1a6fbb;margin-right:7px;vertical-align:middle;"></span>Strecke 5904</div>
-        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#5db83a;margin-right:7px;vertical-align:middle;"></span>Strecke 5903</div>
-        <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9b59b6;margin-right:7px;vertical-align:middle;"></span>Strecke 5010</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Zu Betriebsstelle springen</div>
+      <div class="section-title">Zu km / Betriebsstelle springen</div>
       <div style="display:flex; gap:6px; align-items:center;">
-        <input type="text" id="jump-input" placeholder="z.B. Parsberg oder 5850"
+        <input type="text" id="jump-input" placeholder="45,45 oder Regensburg"
           style="flex:1; background:#1a1f2e; border:1px solid #2a3148; border-radius:6px;
                  padding:7px 10px; font-size:12px; color:#e8eaf0; outline:none; font-family:inherit;"
           oninput="showJumpSuggestions(this.value)"
@@ -424,6 +427,7 @@ let marker = null, boundingBox = null;
 let currentLat = null, currentLng = null;
 let currentRadius = 250;
 let autoZoom = true;
+let kmHighlightMarker = null;
 
 // ── Map ──
 const map = L.map('map', { zoomControl: true }).setView([49.1970791, 11.3597205], 10);
@@ -1126,21 +1130,101 @@ L.geoJSON(betriebsstellen, {
   }
 }).addTo(map);
 
+let kmLabelsEnabled = true;
+
 function updateKmLabelVisibility() {
-  const show = map.getZoom() >= 12;
+  const show = kmLabelsEnabled && map.getZoom() >= 12;
   document.querySelectorAll('.km-label').forEach(el => {
     el.style.display = show ? '' : 'none';
   });
 }
+
+function toggleKmLabels() {
+  kmLabelsEnabled = !kmLabelsEnabled;
+  document.getElementById('km-toggle-btn').classList.toggle('on', kmLabelsEnabled);
+  updateKmLabelVisibility();
+}
+
 map.on('zoomend', updateKmLabelVisibility);
 updateKmLabelVisibility();
 
-// ── Sprung zu Betriebsstelle ──
+// ── Sprung zu Betriebsstelle / km ──
+function clearKmHighlight() {
+  if (kmHighlightMarker) { kmHighlightMarker.remove(); kmHighlightMarker = null; }
+}
+
+function parseKm(str) {
+  return parseFloat(String(str).replace(',', '.'));
+}
+
+function interpolateKm(strecke, targetKm) {
+  const features = betriebsstellen.features
+    .filter(f => f.properties.strecke === strecke)
+    .map(f => ({ km: parseKm(f.properties.km), coords: f.geometry.coordinates, name: f.properties.name }))
+    .sort((a, b) => a.km - b.km);
+  if (features.length === 0) return null;
+  const exact = features.find(f => Math.abs(f.km - targetKm) < 0.001);
+  if (exact) return { lat: exact.coords[1], lng: exact.coords[0], exact: true, name: exact.name };
+  const before = [...features].reverse().find(f => f.km < targetKm);
+  const after  = features.find(f => f.km > targetKm);
+  if (!before && !after) return null;
+  if (!before) return { lat: after.coords[1],  lng: after.coords[0],  exact: false, name: null };
+  if (!after)  return { lat: before.coords[1], lng: before.coords[0], exact: false, name: null };
+  const t = (targetKm - before.km) / (after.km - before.km);
+  return {
+    lat: before.coords[1] + t * (after.coords[1] - before.coords[1]),
+    lng: before.coords[0] + t * (after.coords[0] - before.coords[0]),
+    exact: false, name: null,
+    between: `zwischen ${before.name} (km ${before.km}) und ${after.name} (km ${after.km})`
+  };
+}
+
+function jumpToKm(strecke, kmVal) {
+  clearKmHighlight();
+  const result = interpolateKm(strecke, kmVal);
+  if (!result) return;
+  map.setView([result.lat, result.lng], 14);
+  const popupText = result.exact
+    ? `<b>${result.name}</b><br>Strecke ${strecke} · km ${kmVal}`
+    : `<b>km ${kmVal} · Strecke ${strecke}</b><br><small style="color:#888">interpoliert ${result.between}</small>`;
+  kmHighlightMarker = L.circleMarker([result.lat, result.lng], {
+    radius: 10, color: '#1a6fbb', fillColor: '#4a9de8', fillOpacity: 0.85, weight: 2
+  }).bindPopup(popupText).addTo(map).openPopup();
+  document.getElementById('jump-input').value = '';
+  document.getElementById('jump-suggestions').innerHTML = '';
+}
+
 function showJumpSuggestions(val) {
   const box = document.getElementById('jump-suggestions');
   box.innerHTML = '';
   if (!val || val.length < 2) return;
   const q = val.toLowerCase();
+
+  // km-Eingabe erkennen (z.B. "50,4" oder "50.4")
+  const kmVal = parseKm(val);
+  const isKmInput = !isNaN(kmVal) && /^[\d]+[,.]?\d*$/.test(val.trim());
+
+  if (isKmInput) {
+    const result = interpolateKm('5850', kmVal);
+    if (result) {
+      const btn = document.createElement('button');
+      btn.textContent = result.exact
+        ? `${result.name} · Strecke 5850 km ${kmVal}`
+        : `km ${kmVal} · Strecke 5850 (interpoliert)`;
+      btn.style.cssText = `
+        background:#1a1f2e; border:1px solid #2a3148; border-radius:5px;
+        padding:5px 9px; font-size:11px; color:#9ba3c0; cursor:pointer;
+        text-align:left; font-family:inherit; transition:all 0.15s;
+      `;
+      btn.onmouseover = () => btn.style.borderColor = '#1a6fbb';
+      btn.onmouseout  = () => btn.style.borderColor = '#2a3148';
+      btn.onclick = () => jumpToKm('5850', kmVal);
+      box.appendChild(btn);
+    }
+    return;
+  }
+
+  // Name- oder Streckensuche
   const matches = betriebsstellen.features.filter(f =>
     f.properties.name.toLowerCase().includes(q) ||
     f.properties.strecke.includes(q) ||
@@ -1163,19 +1247,30 @@ function showJumpSuggestions(val) {
 }
 
 function jumpToFeature(f) {
+  clearKmHighlight();
   const [lng, lat] = f.geometry.coordinates;
   map.setView([lat, lng], 14);
+  const p = f.properties;
+  kmHighlightMarker = L.circleMarker([lat, lng], {
+    radius: 10, color: '#1a6fbb', fillColor: '#4a9de8', fillOpacity: 0.85, weight: 2
+  }).bindPopup(`<b>${p.name}</b><br>Strecke ${p.strecke} · km ${p.km}`).addTo(map).openPopup();
   document.getElementById('jump-input').value = '';
   document.getElementById('jump-suggestions').innerHTML = '';
 }
 
 function jumpToFirst() {
-  const val = document.getElementById('jump-input').value.toLowerCase();
+  const val = document.getElementById('jump-input').value.trim();
   if (!val) return;
+  const kmVal = parseKm(val);
+  const isKmInput = !isNaN(kmVal) && /^[\d]+[,.]?\d*$/.test(val);
+  if (isKmInput) {
+    if (interpolateKm('5850', kmVal)) { jumpToKm('5850', kmVal); return; }
+  }
+  const q = val.toLowerCase();
   const match = betriebsstellen.features.find(f =>
-    f.properties.name.toLowerCase().includes(val) ||
-    f.properties.strecke.includes(val) ||
-    f.properties.km.includes(val)
+    f.properties.name.toLowerCase().includes(q) ||
+    f.properties.strecke.includes(q) ||
+    f.properties.km.includes(q)
   );
   if (match) jumpToFeature(match);
 }
